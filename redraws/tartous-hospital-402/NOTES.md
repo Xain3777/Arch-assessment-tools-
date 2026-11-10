@@ -73,13 +73,24 @@ Cut walls and slabs 0.30 mm, stairs 0.25, floor finishes and ground 0.13, elevat
 
 ## Inferred or scaled items (please verify)
 1. **Grid spacing in Section A-A.** No horizontal dimensions are written, so the spacing was scaled from the corrected photo: 6→5 = 465, 5→4 = 390, 4→3 = 570, 3→2 = 365, 2→1 = 480 (±10 cm). These are shown as magenta dimensions.
-2. **Stair treads.** The number of risers per flight comes from each written rise at about 17.5 cm (9–11 risers). The run of each flight (258 cm), the landing widths (≈175 cm) and the core wall positions were scaled.
-3. **Doors, windows and partitions seen beyond the cut** were placed by scaling. Door heights are 210, and the high windows run from +85 to +240 above floor.
-4. **Ground-floor glazing set-back.** It is 150 cm in Section A-A, scaled. Detail B shows about 190 cm. Each drawing is kept true to its own original geometry.
-5. **Roof overhang.** Section A-A scales to about 105 cm beyond the facade, but Detail B scales to about 46 cm, and Plan 3.3 writes 150 measured from grid 6. These three don't agree on the original. Each drawing follows its own source, so check which one is correct for the building.
-6. **Section C-C roof build-up layer names.** The Arabic labels can't be read in the photo, so typical layers are shown (tiles, membrane with cant, insulation, screed to falls). Their thicknesses were scaled at 4 / 2 / 4 / 7 cm.
-7. **Plans 1.1 and 2.2.** These are partly dimensioned. Where no number is written, positions were scaled.
-8. **Title block.** The department line reads "القسم الطبي (?)", which is uncertain. Signatures and names were left blank on purpose.
+2. **Stair geometry.** Counted on the original: 10 risers per flight and 9 treads of 30 cm (270 cm run). The rise per step comes from the written landing levels. Landing widths (≈160 cm) and the 15 cm floor plates and landings were scaled.
+3. **Doors, windows, partitions and columns seen beyond the cut** were placed by scaling (±5 cm). Doors are 210 high, 90 wide in the core. The high windows run from +82 to +238 above floor, with the transom at +125.
+4. **Ground-floor glazing set-back.** It is about 175 cm from the facade face in Section A-A and 188 cm in Detail B, both scaled.
+5. **Roof overhang.** About 105 cm from the facade face in both Section A-A and Detail B (scaled; these agree). Plan 3.3 writes 120 + 30 = 150 measured from grid 6.
+6. **Section C-C layer names.** The original has 7 Arabic labels, but none can be read in the photo, even at 4× zoom. Typical names are shown instead. The thicknesses are the written ones: 8 / 2 / 2 / 4, with slab 38.
+7. **Section C-C parapet wall.** The written thickness is partly legible: "13" is read. It also measures 14 cm on the photo.
+8. **Plans 1.1 and 2.2.** These are partly dimensioned. Where no number is written, positions were scaled.
+9. **Title block.** The department line reads "القسم الطبي (?)", which is uncertain. Signatures and names were left blank on purpose.
+
+## Corrections after the side-by-side check against the original
+- **Stairs:** the cut flights were upside down (steps under the waist). They are now drawn with the steps on top, plus a finish line, handrail pair, mid-rail, posts and end caps. The far flights show only their rails, hidden behind the near flight, as on the original.
+- **Slabs:** blocks are every 54–57 cm (not 33). The slabs have solid beam zones at three places and a plain corridor band, as drawn.
+- **Columns at grids 4 and 3:** 15 cm, filled. The ground-floor column sits left of grid 3, as drawn.
+- **Canopy:** 58 cm (as Detail B), not 112. The facade and parapet positions were re-measured.
+- **Detail B:** the facade face had been misread by about 65 cm, which shortened the roof overhang. It is re-drawn using the written 5 / 20 / 55 and 20 / 60, with blocks 38 @ 57.
+- **Section C-C:** re-drawn from the written 2 / 2 / 13 / 2 coping, the 13 wall, the recess for the 34 upturn, and the 8 / 2 / 2 / 4 build-up.
+- **Plans 1.1 and 2.2:** the panel runs 240–500 (20 + 220 + 20). The wall is hatched and the column cross-hatched, as on the original. All plan viewports are now placed exactly as on the sheet.
+- **Basement:** dotted waterproofing on the outer wall faces. The earth hatch that isn't on the original has been removed.
 
 ## Notes
 - Arabic text uses Arial. If it shows reversed or disconnected in an older AutoCAD, edit it with MTEXT, which shapes Arabic correctly in recent versions.

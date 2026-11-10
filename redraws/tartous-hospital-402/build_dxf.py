@@ -33,10 +33,11 @@ LAYERS = {
     "A-FLOR-FNSH": (7, 13, "Continuous"),
     "A-ELEV": (7, 9, "Continuous"),
     "A-ELEV-DOOR": (7, 9, "Continuous"),
-    "A-GLAZ": (4, 9, "Continuous"),
+    "A-GLAZ": (7, 9, "Continuous"),
     "A-STAIR": (7, 25, "Continuous"),
     "A-STAIR-BEYOND": (7, 13, "Continuous"),
-    "A-HRAL": (7, 9, "Continuous"),
+    "A-STAIR-FNSH": (7, 9, "Continuous"),
+    "A-HRAL": (7, 13, "Continuous"),
     "A-HATCH": (8, 5, "Continuous"),
     "A-GRND": (8, 13, "Continuous"),
     "A-GRID": (1, 9, "CENTER"),
@@ -203,18 +204,20 @@ class Ctx:
         self.line((x - w, y - 1.5 * self.k), (x + w, y - 1.5 * self.k), "A-ANNO-TITL")
 
 
-def ribbed_slab(c, x0, x1, bot, top, solid_zones=(), block_w=20.0, pitch=33.0, cover_top=8.0,
-                cover_bot=5.0, fill=True):
+def ribbed_slab(c, x0, x1, bot, top, solid_zones=(), block_w=34.0, pitch=54.0, cover_top=8.0,
+                cover_bot=4.0, fill=True, plain_bands=(), start=None):
     """Hollow-block (hourdi) ribbed RC slab in section: poche with white block voids."""
     holes = []
     bh_top, bh_bot = top - cover_top, bot + cover_bot
     if bh_top - bh_bot > 4:
-        x = x0 + 12
+        x = x0 + 12 if start is None else start
         while x + block_w < x1 - 12:
             mid = x + block_w / 2
-            if not any(a - 5 <= mid <= b + 5 for a, b in solid_zones):
+            if not any(a - 5 <= mid <= b + 5 for a, b in list(solid_zones) + list(plain_bands)):
                 holes.append([(x, bh_bot), (x + block_w, bh_bot), (x + block_w, bh_top), (x, bh_top)])
             x += pitch
+    for a, b in plain_bands:   # slab drawn as a plain outlined band on the original (no blocks)
+        holes.append([(a, bot + 5), (b, bot + 5), (b, top - 5), (a, top - 5)])
     c.cut([(x0, bot), (x1, bot), (x1, top), (x0, top)], "A-SLAB-CUT", fill, holes)
 
 
@@ -241,35 +244,72 @@ def glazing_cut(c, x_out, x_in, y0, y1):
     c.line((m + 1, y0 + 5), (m + 1, y1 - 5), "A-GLAZ")
 
 
-def stair_flight(c, xa, ya, xb, yb, n, cut=True, waist=15.0):
-    """Flight between (xa,ya) [lower end] and (xb,yb) [upper end]; n risers."""
-    rise = (yb - ya) / n
-    run = (xb - xa) / (n - 1)   # first riser at xa, last riser at xb
-    prof = [(xa, ya)]
-    x, y = xa, ya
+def stair_flight(c, x_low, y_low, x_high, y_high, n, cut=True, waist=12.0, finish=3.0, hide=None,
+                 show_soffit=False):
+    """One straight flight in section, as drawn on the original.
+
+    (x_low, y_low): foot of the first riser; (x_high, y_high): top of the last riser.
+    n risers, n-1 treads. Cut flight: stepped finish line over a poche waist.
+    Beyond flight: handrail + string (underside) only, thin.
+    """
+    d = 1 if x_high > x_low else -1
+    rise = (y_high - y_low) / n
+    run = abs(x_high - x_low) / (n - 1)
+    prof = [(x_low, y_low)]
+    x, y = x_low, y_low
     for i in range(n):
         y += rise
         prof.append((x, y))
         if i < n - 1:
-            x += run
+            x += d * run
             prof.append((x, y))
-    # underside parallel to the pitch line
-    ang = math.atan2(yb - ya, xb - xa)
-    off = waist / math.cos(ang)
-    under = [(xb, yb - rise - off + rise), (xa, ya - off)]
+    cosa = run / math.hypot(run, rise)
+    # line through the inner (root) corners, then the soffit parallel to it
+    def soffit(xx):
+        return y_low + (xx - x_low) * (y_high - rise - y_low) / (x_high - x_low) - finish - waist / cosa
+    def nosing(xx):
+        return y_low + rise + (xx - x_low) * (y_high - y_low - rise) / (x_high - x_low)
+    def seg(xa, ya, xb, yb, layer):
+        """Line, clipped where it passes behind the cut flight in front (hide = its soffit)."""
+        if hide is not None:
+            fa, fb = ya - hide(xa), yb - hide(xb)
+            if fa >= 0 and fb >= 0:
+                return
+            if fa > 0 or fb > 0:
+                t = fa / (fa - fb)
+                xm, ym = xa + t * (xb - xa), ya + t * (yb - ya)
+                if fa > 0:
+                    xa, ya = xm, ym
+                else:
+                    xb, yb = xm, ym
+        c.line((xa, ya), (xb, yb), layer)
+
+    x_top_post = x_high + d * 20      # post on the floor / landing beyond the top riser
+    x_bot_post = x_low - d * 20       # post on the landing / floor before the first riser
     if cut:
-        poly = prof + [(xb, yb - off), (xa + (0 if xb > xa else 0), ya - off)]
+        struct = [(px, py - finish) for px, py in prof]
+        poly = struct + [(x_high, soffit(x_high)), (x_low, soffit(x_low))]
         c.cut(poly, "A-STAIR")
+        c.pline(prof, "A-STAIR-FNSH")
+        for h in (90, 100):
+            c.line((x_low - d * 17, nosing(x_low - d * 17) + h), (x_top_post, y_high + h), "A-HRAL")
+        c.line((x_low - d * 17, nosing(x_low - d * 17) + 90), (x_low - d * 17, nosing(x_low - d * 17) + 100), "A-HRAL")
+        c.line((x_low - d * 17, nosing(x_low - d * 17) + 50), (x_high, y_high + 50), "A-HRAL")
+        c.line((x_high, y_high + 50), (x_top_post, y_high + 50), "A-HRAL")
+        c.line((x_top_post, y_high), (x_top_post, y_high + 100), "A-HRAL")
+        c.line((x_low - d * 17, y_low), (x_low - d * 17, nosing(x_low - d * 17) + 90), "A-HRAL")
     else:
-        # beyond: nosing line + underside + end risers, thin
-        c.line((xa, ya + rise), (xb, yb), "A-STAIR-BEYOND")
-        c.line((xa, ya - off), (xb, yb - off), "A-STAIR-BEYOND")
-        c.line((xa, ya - off), (xa, ya + rise), "A-STAIR-BEYOND")
-    # handrail 90 above pitch line (measured at nosings)
-    c.line((xa, ya + rise + 90), (xb, yb + 90), "A-HRAL")
-    c.line((xa, ya + rise + 82), (xb, yb + 82), "A-HRAL")
-    c.line((xa, ya + rise), (xa, ya + rise + 90), "A-HRAL")
-    c.line((xb, yb), (xb, yb + 90), "A-HRAL")
+        # beyond flight: handrail pair + mid rail, post at the floor end, soffit line
+        for h in (50, 90, 100):
+            seg(x_bot_post, nosing(x_bot_post) + h, x_high, y_high + h, "A-STAIR-BEYOND")
+        c.line((x_bot_post, y_low), (x_bot_post, nosing(x_bot_post) + 100), "A-STAIR-BEYOND")
+        c.line((x_bot_post, nosing(x_bot_post) + 50), (x_bot_post + d * 0, nosing(x_bot_post) + 50), "A-STAIR-BEYOND")
+        # soffit: visible from where it rises out of the floor
+        if show_soffit:
+            k = (soffit(x_high) - soffit(x_low)) / (x_high - x_low)
+            x0 = x_low + (y_low - soffit(x_low)) / k
+            seg(x0, y_low, x_high, soffit(x_high), "A-STAIR-BEYOND")
+    return soffit
 
 
 # =================================================================== SECTION A-A  (1:100)
@@ -279,12 +319,12 @@ GRID = {"6": 0, "5": 465, "4": 855, "3": 1425, "2": 1790, "1": 2270}   # scaled 
 F = [195, 545, 885, 1255, 1605, 1943]          # floor levels (F = finish, roof = structural B)
 LAND = [370, 715, 1070, 1430, 1780]            # half landings
 
-FAC_O, FAC_I = -8, 12          # upper facade wall faces
+FAC_O, FAC_I = -25, -4         # upper facade wall faces (21 cm)
 CORE_L0, CORE_L1 = 1955, 1985  # core left wall
 CORE_R0, CORE_R1 = 2593, 2618  # core right wall
 BAS_L0, BAS_L1 = 1670, 1695    # basement left wall
 GF_GLZ = 150                   # ground floor glazing set-back
-PAR_O, PAR_I = -111, -91       # roof parapet
+PAR_O, PAR_I = -116, -102      # roof parapet (14 cm, coping 30)
 
 # grid lines + bubbles
 for g, x in GRID.items():
@@ -292,18 +332,22 @@ for g, x in GRID.items():
     aa.line((x, -76 + r), (x, 2140), "A-GRID")
 
 # ---- roof
-cols = [(GRID["4"] - 12.5, GRID["4"] + 12.5), (GRID["3"] - 12.5, GRID["3"] + 12.5)]
+cols = [(841, 856), (1435, 1450)]          # 15 cm columns, positions scaled from the original
+BEAMS = [(840, 922), (1365, 1455), (1755, 1840)]   # solid (no-block) beam zones in floor slabs
+PLAIN = [(1455, 1755)]                      # plain band in floor slabs (corridor)
 ribbed_slab(aa, PAR_O, CORE_L0, 1905, 1943, solid_zones=[(FAC_O, FAC_I + 20)] + cols)
-aa.cutrect(PAR_O, 1943, PAR_I, 2055)
-aa.line((PAR_I, 2055), (CORE_L0, 2055), "A-ELEV")         # parapet beyond
-aa.line((PAR_I, 2045), (CORE_L0, 2045), "A-ELEV")
+aa.cut([(PAR_O, 1943), (PAR_I, 1943), (PAR_I, 2043), (PAR_O + 30, 2043), (PAR_O + 30, 2055), (PAR_O, 2055)])
+aa.line((PAR_O + 30, 2055), (CORE_L0, 2055), "A-ELEV")    # parapet beyond
+aa.line((PAR_O + 30, 2043), (CORE_L0, 2043), "A-ELEV")
 # ---- 2nd floor (+1605)
-ribbed_slab(aa, FAC_O, CORE_L0, 1555, 1593, solid_zones=[(FAC_O, FAC_I + 20)] + cols)
+ribbed_slab(aa, FAC_O, CORE_L0, 1555, 1593, solid_zones=[(FAC_O, FAC_I + 20)] + BEAMS, plain_bands=PLAIN)
 aa.line((FAC_I, 1605), (CORE_L0, 1605), "A-FLOR-FNSH")
 aa.cut([(FAC_O, 1545), (FAC_I, 1545), (FAC_I, 1555), (FAC_O, 1555)])          # edge beam downstand
-aa.cut([(-120, 1510), (-110, 1510), (-110, 1545), (FAC_O, 1545), (FAC_O, 1555), (-120, 1555)])  # canopy
+aa.cut([(FAC_O - 58, 1510), (FAC_O - 46, 1510), (FAC_O - 46, 1543), (FAC_O, 1543), (FAC_O, 1555),
+        (FAC_O - 58, 1555)])  # canopy 58 cm (as Detail B)
 # ---- 1st floor (+1255)
-ribbed_slab(aa, FAC_O, CORE_L0, 1205, 1243, solid_zones=[(FAC_O, FAC_I + 20)] + cols + [(GF_GLZ - 10, GF_GLZ + 25)])
+ribbed_slab(aa, FAC_O, CORE_L0, 1205, 1243, solid_zones=[(FAC_O, FAC_I + 20)] + BEAMS + [(GF_GLZ - 10, GF_GLZ + 25)],
+            plain_bands=PLAIN)
 aa.line((FAC_I, 1255), (CORE_L0, 1255), "A-FLOR-FNSH")
 # ---- facade walls / windows (heights from the written facade chain)
 for y0, y1 in ((1605, 1695), (1850, 1905), (1243, 1345), (1500, 1545)):
@@ -331,66 +375,70 @@ aa.cutrect(CORE_R0, 82, CORE_R1, 2387)
 for x0, x1 in ((BAS_L0, BAS_L1), (CORE_L0, CORE_L1), (CORE_R0, CORE_R1)):
     aa.breakline((x0 - 15, 82), (x1 + 15, 82), "A-WALL-CUT")
 # core roof slab
-aa.cutrect(CORE_L1, 2255, CORE_R0, 2275, "A-SLAB-CUT")
+aa.cutrect(CORE_L1, 2260, CORE_R0, 2275, "A-SLAB-CUT")
 aa.line((CORE_L0, 2387), (CORE_R1, 2387), "A-WALL-CUT")
-# partitions at grids 4 & 3 (thin double line on the original, 12 cm)
+# columns (cut) - 15 cm, dark on the original
 for x0, x1 in cols:
-    xc = (x0 + x1) / 2
-    for y0, y1 in ((885, 1205), (1255, 1555), (1605, 1905)):
-        aa.cutrect(xc - 6, y0, xc + 6, y1, fill=False)
+    for y0, y1 in ((1255, 1555), (1605, 1905)):
+        aa.cutrect(x0, y0, x1, y1)
+aa.cutrect(841, 885, 856, 1205, fill=False)       # ground floor at grid 4: thin double line
+aa.cutrect(1385, 885, 1400, 1205)                 # ground floor column (dark) left of grid 3
+# waterproofing (dotted on original) on outer faces of basement walls
+aa.line((BAS_L0 - 3, 82), (BAS_L0 - 3, 865), "A-HIDDEN")
+aa.line((CORE_R1 + 3, 82), (CORE_R1 + 3, 870), "A-HIDDEN")
 
 # exterior ground
 aa.line((-320, 870), (-30, 870), "A-GRND")
 aa.hatch([(-320, 800), (-30, 800), (-30, 870), (-320, 870)], "EARTH", 6.0)
 aa.line((CORE_R1, 870), (2900, 870), "A-GRND")
 aa.hatch([(CORE_R1, 800), (2900, 800), (2900, 870), (CORE_R1, 870)], "EARTH", 6.0)
-aa.hatch([(CORE_R1, 82), (CORE_R1 + 60, 82), (CORE_R1 + 60, 800), (CORE_R1, 800)], "EARTH", 6.0)
-aa.hatch([(BAS_L0 - 60, 82), (BAS_L0, 82), (BAS_L0, 840), (BAS_L0 - 60, 840)], "EARTH", 6.0)
+
 
 # ---- suspended ceilings + partitions (cut)
 for fl in (1605, 1255):
     c_bot = fl + 240
     aa.cutrect(1680, c_bot, CORE_L0, c_bot + 10, "A-WALL-CUT", fill=False)
-    aa.cutrect(391, c_bot, 590, c_bot + 10, "A-WALL-CUT", fill=False)
+    aa.cutrect(412, c_bot, 607, c_bot + 10, "A-WALL-CUT", fill=False)
+    aa.cutrect(597, c_bot - 15, 607, c_bot, "A-WALL-CUT")          # bulkhead drop
     aa.cutrect(1670, fl, 1680, fl + 300 - (12 if fl == 1255 else 0), "A-WALL-CUT", fill=False)
-    aa.cutrect(391, fl, 401, c_bot, "A-WALL-CUT", fill=False)
+    aa.cutrect(412, fl, 422, c_bot, "A-WALL-CUT", fill=False)
     # elevation beyond
-    door_elev(aa, 425, 505, fl)
-    window_elev(aa, 690, 798, fl + 85, fl + 240, transom=fl + 190)
-    window_elev(aa, 1504, 1612, fl + 85, fl + 240, transom=fl + 190)
-    aa.line((656, fl), (656, c_bot), "A-ELEV")
+    door_elev(aa, 425, 490, fl)
+    window_elev(aa, 690, 806, fl + 82, fl + 238, transom=fl + 125)
+    window_elev(aa, 1504, 1612, fl + 82, fl + 238, transom=fl + 125)
+    for x in (42, 506, 606, 640, 656):
+        aa.line((x, fl), (x, c_bot if x != 42 else fl + 300 - (12 if fl == 1255 else 0)), "A-ELEV")
+aa.line((1686, 1255 + 60), (CORE_L0, 1255 + 60), "A-ELEV")     # counter line, 1st floor
 # ground floor beyond
 for x0 in (615, 1090):
     door_elev(aa, x0, x0 + 110, 885)
-door_elev(aa, 1455, 1530, 885)
-door_elev(aa, 1875, 1945, 885)
-for x in (523, 897, 1487, 1554, 1712):
+door_elev(aa, 1430, 1500, 885)
+door_elev(aa, 1865, 1940, 885)
+aa.cutrect(1690, 885, 1705, 1205)                 # ground floor partition (dark on original)
+for x in (-8, 42, 420, 523, 898, 1530, 1755, 1835):
     aa.line((x, 885), (x, 1205), "A-ELEV")
 # basement room doors
 for fl in (195, 545):
     door_elev(aa, 1787, 1877, fl)
 
-# ---- staircase (core)
-ST_FLOOR_END = 2160    # end of floor landing / first riser
-ST_LAND = 2418         # start of half landing
-stair_risers = {}
+# ---- staircase (core) - dog-leg, 10 risers per flight, 9 treads x 30 = 270 run (read on original)
+ST_FLOOR_END = 2163    # nosing of top riser at floor side
+ST_LAND = ST_FLOOR_END + 270   # first riser at landing side
+PLATE = 15             # floor plate / landing thickness (scaled ~15)
 for i in range(5):
     lo, mid, hi = F[i], LAND[i], F[i + 1]
-    n1 = max(9, round((mid - lo) / 17.5))
-    n2 = max(9, round((hi - mid) / 17.5))
-    stair_risers[(lo, mid)] = n1
-    stair_risers[(mid, hi)] = n2
-    # beyond flight: floor (left) -> landing (right)
-    stair_flight(aa, ST_FLOOR_END, lo, ST_LAND, mid, n1, cut=False)
-    # cut flight: landing (right) -> floor (left): draw as rising leftwards
-    stair_flight(aa, ST_LAND, mid, ST_FLOOR_END, hi, n2, cut=True)
-    # half landing slab (cut)
-    aa.cutrect(ST_LAND, mid - 20, CORE_R0, mid, "A-STAIR")
+    # cut flight (in front): landing (right, low) up to floor (left)
+    front = stair_flight(aa, ST_LAND, mid, ST_FLOOR_END, hi, 10, cut=True)
+    # beyond flight: floor (left, low) up to landing (right), hidden behind the cut flight
+    stair_flight(aa, ST_FLOOR_END, lo, ST_LAND, mid, 10, cut=False, hide=front, show_soffit=(i == 0))
+    aa.cutrect(ST_LAND, mid - PLATE, CORE_R0, mid, "A-STAIR")
+    aa.line((ST_LAND, mid - 3), (CORE_R0, mid - 3), "A-STAIR-FNSH")
 for fl in F[1:]:
-    aa.cutrect(CORE_L1, fl - 20, ST_FLOOR_END, fl, "A-STAIR")
+    aa.cutrect(CORE_L1, fl - PLATE, ST_FLOOR_END, fl, "A-STAIR")
+    aa.line((CORE_L1, fl - 3), (ST_FLOOR_END, fl - 3), "A-STAIR-FNSH")
 # core doors (elevation, far wall)
 for fl in F[:5]:
-    door_elev(aa, 2011, 2121, fl)
+    door_elev(aa, 2010, 2100, fl)
 
 # ---- detail B callout
 aa.rect(-150, 820, 260, 2120, "A-DETL-CALL")
@@ -398,7 +446,7 @@ aa.text("B", -150, 2135, 5.0, "A-ANNO-TITL")
 
 # ---- dimensions
 aa.dim_chain([885, 975, 1205, 1255, 1345, 1500, 1510, 1545, 1605, 1695, 1850, 1905, 2055], -230)
-aa.dim_chain([885, 1205, 1255, 1555, 1593, 1605, 1905, 1943, 2055], 300)
+aa.dim_chain([885, 1205, 1255, 1555, 1593, 1605, 1905, 1937, 1943, 2055], 300)
 aa.dim_chain([195, 525, 545, 865, 885, 1205, 1255, 1495, 1505, 1555, 1605, 1845, 1855, 1905, 1943, 2055], 1770)
 # grid spacing: scaled from the drawing -> flagged
 aa.dim_chain(list(GRID.values())[::-1][::-1], -190, vertical=False, layer="Z-INFERRED", color=6)
@@ -417,103 +465,111 @@ for y in (545, 195):
 aa.title("SECTION A-A", "المقطع A-A", "1:100", 900, -300)
 
 # =================================================================== DETAIL B  (1:50)
-b = Ctx(4000, 0, 5, "DIM-50")       # X = cm from upper facade face, Y = level
-# roof
-ribbed_slab(b, -46, 240, 1905, 1943, solid_zones=[(-46, 30)])
-b.cut([(-46, 1943), (-25, 1943), (-25, 2045), (-17, 2045), (-17, 2055), (-46, 2055)])
-b.line((-17, 1955), (240, 1955), "A-FLOR-FNSH")
-b.line((-17, 2055), (240, 2055), "A-ELEV")
-b.line((-17, 2045), (240, 2045), "A-ELEV")
-b.breakline((240, 1890), (240, 1960), "A-SLAB-CUT")
+b = Ctx(4000, 0, 5, "DIM-50")       # X = cm from outer face of upper facade wall, Y = level
+RB = 245                            # right break line
+# roof: parapet 14 + coping 30, overhang 105 (scaled), ribbed slab 32 + 6
+ribbed_slab(b, -105, RB, 1905, 1943, solid_zones=[(-105, -64)], block_w=38, pitch=57, start=-62)
+b.cut([(-105, 1943), (-91, 1943), (-91, 2043), (-75, 2043), (-75, 2055), (-105, 2055)])
+b.line((-75, 2055), (RB, 2055), "A-ELEV")
+b.line((-75, 2043), (RB, 2043), "A-ELEV")
+b.breakline((RB, 1890), (RB, 1960), "A-SLAB-CUT")
 # 2nd floor
-b.cutrect(-4, 1850, 17, 1905)
-glazing_cut(b, -2, 12, 1695, 1850)
-b.cutrect(-4, 1605, 17, 1695)
-ribbed_slab(b, -4, 240, 1555, 1593, solid_zones=[(-4, 50)])
-b.line((17, 1605), (240, 1605), "A-FLOR-FNSH")
-b.cut([(-4, 1545), (17, 1545), (17, 1555), (-4, 1555)])
-b.cut([(-62, 1510), (-50, 1510), (-50, 1545), (-4, 1545), (-4, 1555), (-62, 1555)])
-b.cutrect(-4, 1500, 17, 1545)
-b.breakline((240, 1540), (240, 1615), "A-SLAB-CUT")
-for x in (62, 75):
-    b.line((x, 1605), (x, 1850), "A-ELEV")
-    b.line((x, 1255), (x, 1500), "A-ELEV")
-# 1st floor
-glazing_cut(b, -10, 6, 1345, 1500)
-b.cutrect(-12, 1243, 8, 1345)
-b.cutrect(-17, 1205, -12, 1345, fill=False)          # cladding
-ribbed_slab(b, -12, 240, 1205, 1243, solid_zones=[(-12, 68)])
-b.line((8, 1255), (240, 1255), "A-FLOR-FNSH")
-b.breakline((240, 1190), (240, 1265), "A-SLAB-CUT")
+b.cutrect(0, 1850, 21, 1905)
+glazing_cut(b, 6, 19, 1695, 1850)
+b.cutrect(0, 1605, 21, 1695)
+ribbed_slab(b, 0, RB, 1555, 1593, solid_zones=[(0, 54)], block_w=38, pitch=57, start=56)
+b.line((21, 1605), (RB, 1605), "A-FLOR-FNSH")
+b.cut([(0, 1545), (21, 1545), (21, 1555), (0, 1555)])
+b.cut([(-62, 1510), (-50, 1510), (-50, 1543), (0, 1543), (0, 1555), (-62, 1555)])
+b.cutrect(0, 1500, 21, 1545)
+b.breakline((RB, 1540), (RB, 1615), "A-SLAB-CUT")
+b.line((79, 1605), (79, 1850), "A-ELEV")
+b.line((79, 1255), (79, 1500), "A-ELEV")
+# 1st floor: cladding 5 + concrete 20 (written), beam 20 + 60 (written)
+glazing_cut(b, 6, 19, 1345, 1500)
+b.cutrect(0, 1243, 20, 1345)
+b.cutrect(-5, 1205, 0, 1345, fill=False)
+ribbed_slab(b, 0, RB, 1205, 1243, solid_zones=[(0, 80)], block_w=38, pitch=57, start=82)
+b.line((20, 1255), (RB, 1255), "A-FLOR-FNSH")
+b.breakline((RB, 1190), (RB, 1265), "A-SLAB-CUT")
 # ground floor
-b.cutrect(183, 885, 198, 975)
-glazing_cut(b, 185, 196, 975, 1205)
-b.cutrect(-21, 865, 240, 885, "A-SLAB-CUT", fill=False)
-b.line((-21, 877), (240, 877), "A-FLOR-FNSH")
-b.hatch([(-21, 800), (240, 800), (240, 865), (-21, 865)], "GRAVEL", 1.0)
-b.cutrect(-35, 815, -21, 885)
-b.line((-120, 870), (-35, 870), "A-GRND")
-b.hatch([(-120, 800), (-35, 800), (-35, 870), (-120, 870)], "EARTH", 3.0)
+b.cutrect(188, 885, 202, 975)
+glazing_cut(b, 189, 201, 975, 1205)
+for x in (18, 78):
+    b.line((x, 885), (x, 1205), "A-ELEV")
+b.cutrect(-19, 865, RB, 885, "A-SLAB-CUT", fill=False)
+b.line((-19, 877), (RB, 877), "A-FLOR-FNSH")
+b.hatch([(-19, 800), (RB, 800), (RB, 865), (-19, 865)], "GRAVEL", 1.0)
+b.cutrect(-33, 803, -19, 885)
+b.line((-125, 870), (-33, 870), "A-GRND")
+b.hatch([(-125, 800), (-33, 800), (-33, 870), (-125, 870)], "EARTH", 3.0)
 # section cut marks
-for y, s, x0, x1 in ((2120, "3", -116, 108), (1794, "2", -75, 100), (1449, "1", -75, 95)):
+for y, s_, x0, x1 in ((2120, "3", -174, 104), (1794, "2", -70, 104), (1449, "1", -70, 101)):
     b.line((x0, y), (x1, y), "A-SECT-MARK")
-    b.text(s, x0, y + 3, 3.5, "A-ANNO-TEXT")
-    b.text(s, x1, y + 3, 3.5, "A-ANNO-TEXT", TextEntityAlignment.BOTTOM_RIGHT)
+    b.text(s_, x0, y + 3, 3.5, "A-ANNO-TEXT")
+    b.text(s_, x1, y + 3, 3.5, "A-ANNO-TEXT", TextEntityAlignment.BOTTOM_RIGHT)
 # grid 6
-r = b.bubble(37, 723, "6")
-b.line((37, 723 + r), (37, 880), "A-GRID")
+r = b.bubble(46, 715, "6")
+b.line((46, 715 + r), (46, 1205), "A-GRID")
 # dims
-b.dim_chain([870, 885, 975, 1205, 1255, 1345, 1500, 1510, 1545, 1605, 1695, 1850, 1905, 2055], -100)
-b.dim_chain([885, 1205, 1255, 1555, 1593, 1605, 1905, 1943, 2055], 180)
-b.dim_chain([-17, -12, 8, 63], 1404, vertical=False)
-b.dim_chain([-12, 8, 68], 1184, vertical=False)
-for y, s in ((2055, "+2055"), (1943, "+1943 B"), (1605, "+1605 F"), (1255, "+1255 F"), (885, "+885 F")):
-    b.level(215, y, s)
+b.dim_chain([870, 885, 975, 1205, 1255, 1345, 1500, 1510, 1545, 1605, 1695, 1850, 1905, 2055], -125)
+b.dim_chain([885, 1205, 1255, 1555, 1593, 1605, 1905, 1937, 1943, 2055], 174)
+b.dim_chain([-5, 0, 20, 75], 1404, vertical=False)
+b.dim_chain([0, 20, 80], 1184, vertical=False)
+for y, s_ in ((2055, "+2055"), (1943, "+1943 B"), (1605, "+1605 F"), (1255, "+1255 F"), (885, "+885 F")):
+    b.level(215, y, s_)
 b.title("DETAIL B", "التفصيلة B", "1:50", 60, 640)
 
 # =================================================================== SECTION C-C  (1:10)
 cc = Ctx(5200, 0, 1, "DIM-10")      # X = cm from outer concrete face of parapet, Y = level
-cc.cut([(0, 1905), (0, 2055), (30, 2052), (30, 2040), (15, 2040), (15, 1943), (99, 1943), (99, 1905)],
-       "A-WALL-CUT", fill=False)
-cc.hatch([(0, 1905), (0, 2055), (30, 2052), (30, 2040), (15, 2040), (15, 1943), (99, 1943), (99, 1905)],
-         "AR-CONC", 0.05)
-cc.hatch([(0, 1905), (0, 2055), (30, 2052), (30, 2040), (15, 2040), (15, 1943), (99, 1943), (99, 1905)],
-         "ANSI31", 0.6)
+# written: coping 30 (+2 render), cap 13 concrete + 2/2 above + 2 below, wall 13 (+2 render each side),
+# waterproofing upturn 34, roof build-up 8 / 2 / 2 / 4, slab 38, parapet 112 above +1943
+UP = 1955 + 34                      # top of waterproofing upturn (wall recessed to 10 below it)
+conc = [(0, 1905), (0, 2051), (30, 2049), (30, 2038), (13, 2038), (13, UP), (10, UP), (10, 1943),
+        (99, 1943), (99, 1905)]
+cc.pline(conc, "A-WALL-CUT", close=True)
+cc.hatch(conc, "AR-CONC", 0.05)
+cc.hatch(conc, "ANSI31", 0.6)
 cc.breakline((99, 1898), (99, 1950), "A-SLAB-CUT")
-cc.pline([(-2, 1905), (-2, 2057), (32, 2054), (32, 2038), (17, 2038), (17, 1985)], "A-FLOR-FNSH")  # render
-cc.pline([(-22, 1905), (-22, 2055)], "A-HIDDEN")      # element beyond (dashed on original)
-# drip groove under the coping
-cc.rect(26, 2040, 28, 2038.5, "A-WALL-CUT")
-# waterproofing upstand with cant
-wp = [(17, 1985), (19, 1985), (19, 1966)]
+cc.pline([(-2, 1905), (-2, 2053), (32, 2051), (32, 2036), (15, 2036), (15, UP + 3), (13, UP + 3)],
+         "A-FLOR-FNSH")                                   # render 2 cm
+cc.line((0, 2055), (32, 2053), "A-FLOR-FNSH")            # top finish (2 + 2 over the cap)
+cc.pline([(-22, 1905), (-22, 2055)], "A-HIDDEN")         # projecting element beyond (dashed)
+cc.rect(26, 2036, 28, 2034.5, "A-WALL-CUT")              # drip
+# waterproofing membrane (2) turned up into the recess with a cant (radius 10)
+wp = [(13, UP + 3), (13, UP), (11.5, UP), (11.5, 1964)]
 for i in range(1, 10):
-    a = math.radians(180 + 90 * i / 9)
-    wp.append((29 + 10 * math.cos(a), 1966 + 10 * math.sin(a)))
-wp += [(99, 1956)]
-cc.pline(wp, "A-STAIR", const_width=0.2)
-# roof build-up
-for y in (1950, 1954, 1956, 1960):
-    cc.line((17 if y < 1956 else 29, y), (99, y), "A-FLOR-FNSH")
-cc.hatch([(17, 1943), (99, 1943), (99, 1950), (17, 1950)], "AR-SAND", 0.12)
-cc.hatch([(17, 1950), (99, 1950), (99, 1954), (17, 1954)], "ANSI37", 0.35)
-cc.hatch([(29, 1956), (99, 1956), (99, 1960), (29, 1960)], "AR-SAND", 0.06)
-for x in range(38, 99, 15):
-    cc.line((x, 1956), (x, 1960), "A-FLOR-FNSH")
-# layer labels (original Arabic labels illegible -> typical build-up, flagged)
-labels = ["Tiles on mortar bed (4)", "Waterproofing membrane, upturned 30 with cant",
-          "Thermal insulation (4)", "Screed to falls (7)", "RC ribbed slab (38)"]
-ys = [1958, 1955, 1952, 1946, 1925]
-for i, (s, y) in enumerate(zip(labels, ys)):
+    ang = math.radians(180 + 90 * i / 9)
+    wp.append((21.5 + 10 * math.cos(ang), 1964 + 10 * math.sin(ang)))
+wp += [(99, 1954)]
+cc.pline(wp, "A-STAIR", const_width=0.25)
+# build-up layers
+cc.line((10, 1951), (99, 1951), "A-FLOR-FNSH")
+cc.line((10, 1953), (99, 1953), "A-FLOR-FNSH")
+cc.line((22, 1955), (99, 1955), "A-FLOR-FNSH")
+cc.line((22, 1959), (99, 1959), "A-FLOR-FNSH")
+cc.line((22, 1955), (22, 1959), "A-FLOR-FNSH")
+cc.hatch([(10, 1943), (99, 1943), (99, 1951), (10, 1951)], "AR-SAND", 0.12)
+cc.hatch([(22, 1955), (99, 1955), (99, 1959), (22, 1959)], "AR-SAND", 0.06)
+for x in range(37, 99, 15):
+    cc.line((x, 1955), (x, 1959), "A-FLOR-FNSH")
+# layer labels: 7 Arabic labels on the original are illegible in the photo -> typical names, flagged
+labels = ["Floor tiles on mortar (4)", "Waterproofing membrane (2), upturned 34 with cant",
+          "Levelling screed (2)", "Lightweight concrete to falls (8)", "RC ribbed slab 32 + 6",
+          "Ceiling plaster"]
+ys = [1957, 1954, 1952, 1947, 1925, 1906]
+for i, (s_, y) in enumerate(zip(labels, ys)):
     tx, ty = 115, 2015 - i * 7
-    cc.pline([(70 + i * 5, y), (70 + i * 5, ty), (tx - 1, ty)], "Z-INFERRED")
-    cc.text(s, tx, ty, 2.2, "Z-INFERRED", TextEntityAlignment.MIDDLE_LEFT)
-cc.text("Layer names inferred - original Arabic labels illegible in scan", 115, 2025, 2.0,
+    cc.pline([(45 + i * 6, y), (45 + i * 6, ty), (tx - 1, ty)], "Z-INFERRED")
+    cc.text(s_, tx, ty, 2.2, "Z-INFERRED", TextEntityAlignment.MIDDLE_LEFT)
+cc.text("Layer names inferred - original Arabic labels illegible in photo", 115, 2025, 2.0,
         "Z-INFERRED", TextEntityAlignment.MIDDLE_LEFT)
-cc.dim_chain([-22, -2, 0, 30, 32], 2070, vertical=False)
-cc.dim_chain([-22, -2, 0, 15, 17], 2030, vertical=False)
+cc.dim_chain([-22, -2, 0, 30, 32], 2072, vertical=False)
+cc.dim_chain([-22, -2, 0, 13, 15], 2030, vertical=False)
 cc.dim_chain([1943, 2055], -32)
-cc.dim_chain([2040, 2055], 42)
-cc.dim_chain([1905, 1943, 1950, 1954, 1956, 1960], 108)
+cc.dim_chain([2036, 2038, 2051, 2053, 2055], 42)
+cc.dim_chain([1955, UP], 30)
+cc.dim_chain([1905, 1943, 1951, 1953, 1955, 1959], 108)
 cc.level(60, 1943, "+1943 B")
 cc.level(-12, 2055, "+2055", side=-1)
 cc.title("SECTION C-C", "المقطع C-C", "1:10", 45, 1880)
@@ -524,9 +580,9 @@ shape = [(-49, 0), (-10, 0), (-10, -20), (10, -20), (10, 0), (44, 0), (44, -15),
          (25, -35), (-25, -35), (-25, -15), (-49, -15)]
 gr.pline(shape, "A-WALL-CUT", close=True)
 gr.hatch(shape, "ANSI31", 0.6)
-gr.breakline((-49, 3), (-49, -18), "A-WALL-CUT")
-gr.breakline((44, 3), (44, -18), "A-WALL-CUT")
-for seq in ([(-48, -35), (-40, -35), (-40, -50), (40, -50), (40, -35), (48, -35)],):
+gr.breakline((-49, 3), (-49, -35), "A-WALL-CUT")
+gr.breakline((44, 3), (44, -35), "A-WALL-CUT")
+for seq in ([(-49, -35), (-40, -35), (-40, -50), (40, -50), (40, -35), (44, -35)],):
     gr.pline(seq, "A-ELEV")
 gr.line((0, 18), (0, -68), "A-SECT-MARK")
 for y, s in ((18, "C"), (-68, "C")):
@@ -552,9 +608,10 @@ p3.dim_chain([-150, 0], 345)
 p3.title("PLAN 3.3", "المسقط 3.3", "1:50", 250, -300)
 
 p2 = Ctx(1200, -1600, 5, "DIM-50")
-p2.cutrect(-7.5, 56, 7.5, 170)
+p2.rect(-7.5, 56, 7.5, 170, "A-WALL-CUT")
 p2.hatch([(-7.5, 56), (7.5, 56), (7.5, 170), (-7.5, 170)], "ANSI31", 2.0)
-p2.cutrect(-12.5, 0, 12.5, 56)
+p2.rect(-12.5, 0, 12.5, 56, "A-WALL-CUT")
+p2.hatch([(-12.5, 0), (12.5, 0), (12.5, 56), (-12.5, 56)], "ANSI37", 0.5)
 p2.line((-25, 170), (25, 170), "A-WALL-CUT")
 p2.pline([(-20, 0), (-20, -15), (-10, -15), (-10, -21)], "A-ELEV")
 p2.pline([(20, 0), (20, -15), (10, -15), (10, -21)], "A-ELEV")
@@ -565,45 +622,47 @@ for y in (0, -6):
 p2.rect(229, 0, 482, -21, "A-WALL-CUT")
 p2.hatch([(229, 0), (482, 0), (482, -21), (229, -21)], "ANSI31", 2.0)
 for x0, x1 in ((-87, -10), (10, 229), (482, 590)):
-    p2.line((x0, -19), (x1, -19), "A-ELEV")
-    p2.line((x0, -74 if x1 != 590 else -74), (x1, -74), "A-ELEV")
+    p2.line((x0, -31), (x1, -31), "A-ELEV")
+    p2.line((x0, -76), (x1, -76), "A-ELEV")
 for x in (-10, 10, 229, 482):
-    p2.line((x, -19), (x, -74), "A-ELEV")
-p2.line((-87, -128), (590, -128), "A-HIDDEN")
-p2.breakline((-67, 10), (-67, -90), "A-ELEV")
-p2.breakline((574, 10), (574, -90), "A-ELEV")
+    p2.line((x, -21), (x, -76), "A-ELEV")
+p2.line((-87, -126), (590, -126), "A-HIDDEN")
+p2.breakline((-73, 25), (-73, -140), "A-ELEV")
+p2.breakline((570, 25), (570, -140), "A-ELEV")
 r = p2.bubble(0, -160, "C")
 p2.line((0, -21), (0, -160 + r), "A-GRID")
 p2.title("PLAN 2.2", "المسقط 2.2", "1:50", 250, -300)
 
 p1 = Ctx(2400, -1600, 5, "DIM-50")
-p1.cutrect(-7.5, 65, 7.5, 175)
-p1.hatch([(-7.5, 65), (7.5, 65), (7.5, 175), (-7.5, 175)], "ANSI31", 2.0)
-p1.line((-25, 175), (25, 175), "A-WALL-CUT")
-p1.cutrect(-12.5, 10, 12.5, 65)
+p1.rect(-7.5, 65, 7.5, 180, "A-WALL-CUT")
+p1.hatch([(-7.5, 65), (7.5, 65), (7.5, 180), (-7.5, 180)], "ANSI31", 2.0)
+p1.line((-40, 178), (38, 178), "A-WALL-CUT")
+p1.rect(-12.5, 10, 12.5, 65, "A-WALL-CUT")
+p1.hatch([(-12.5, 10), (12.5, 10), (12.5, 65), (-12.5, 65)], "ANSI37", 0.5)
 p1.pline([(-20, 10), (-20, 0), (-10, 0), (-10, -10), (10, -10), (10, 0), (20, 0), (20, 10)], "A-WALL-CUT")
 p1.line((-10, -10), (-10, -70), "A-ELEV")
 p1.line((10, -10), (10, -70), "A-ELEV")
 for y in (10, 0):
-    p1.line((-100, y), (-20, y), "A-GLAZ")
+    p1.line((-76, y), (-20, y), "A-GLAZ")
     p1.line((20, y), (240, y), "A-GLAZ")
-p1.line((240, 0), (240, 20), "A-GLAZ")
-p1.line((260, 0), (260, 20), "A-GLAZ")
-p1.rect(260, 0, 480, 20, "A-WALL-CUT")
-p1.hatch([(260, 0), (480, 0), (480, 20), (260, 20)], "ANSI31", 2.0)
-p1.line((-100, -25), (-10, -25), "A-ELEV")
-p1.line((10, -25), (480, -25), "A-ELEV")
-p1.line((-100, -60), (480, -60), "A-HIDDEN")
-p1.breakline((-100, 30), (-100, -70), "A-ELEV")
-p1.breakline((495, 30), (495, -70), "A-ELEV")
-r = p1.bubble(0, -112, "C")
-p1.line((0, -70), (0, -112 + r), "A-GRID")
-p1.dim_chain([-70, -10, 0, 10, 35, 65], 77)
-p1.dim_chain([-20, -10, 10, 20], -45, vertical=False)
-p1.dim_chain([20, 240, 260, 480], -85, vertical=False)
-p1.dim_chain([-12.5, 12.5], 80, vertical=False)
+    p1.line((500, y), (560, y), "A-GLAZ")
+p1.rect(240, 10, 500, -10, "A-WALL-CUT")
+p1.hatch([(240, 10), (500, 10), (500, -10), (240, -10)], "ANSI31", 2.0)
+p1.line((260, 10), (260, -10), "A-WALL-CUT")
+p1.line((480, 10), (480, -10), "A-WALL-CUT")
+p1.line((-76, -25), (-10, -25), "A-ELEV")
+p1.line((10, -25), (560, -25), "A-ELEV")
+p1.line((-76, -68), (560, -68), "A-HIDDEN")
+p1.breakline((-76, 30), (-76, -90), "A-ELEV")
+p1.breakline((560, 30), (560, -90), "A-ELEV")
+r = p1.bubble(0, -118, "C")
+p1.line((0, -70), (0, -118 + r), "A-GRID")
+p1.dim_chain([-70, -10, 0, 10, 35, 65], 60)
+p1.dim_chain([-20, -10, 10, 20], -40, vertical=False)
+p1.dim_chain([20, 240, 260, 480, 500], -48, vertical=False)
+p1.dim_chain([-12.5, 12.5], 72, vertical=False)
 p1.dim_chain([-7.5, 7.5], 150, vertical=False)
-p1.dim_chain([-60, -15, 0, 20], 510)
+p1.dim_chain([-70, -25, -10, 10], 520)
 p1.title("PLAN 1.1", "المسقط 1.1", "1:50", 200, -300)
 
 # =================================================================== PAPER SPACE SHEET (A1)
@@ -640,7 +699,7 @@ def aa_m(px, py):
 
 
 def b_m(px, py):
-    return (4000 + (px - 3270) / 1.2, 885 + (2145 - py) / 1.2)
+    return (4000 + (px - 3345) / 1.2, 885 + (2145 - py) / 1.2)
 
 
 def cc_m(px, py):
@@ -655,9 +714,9 @@ viewport(330, 640, 2700, 2330, aa_m((330 + 2700) / 2, (640 + 2330) / 2), 10)
 viewport(3020, 600, 3900, 2520, b_m((3020 + 3900) / 2, (600 + 2520) / 2), 5)
 viewport(3880, 560, 4720, 1990, cc_m((3880 + 4720) / 2, (560 + 1990) / 2), 1)
 viewport(2380, 600, 3060, 1440, gr_m((2380 + 3060) / 2, (600 + 1440) / 2), 1)
-viewport(420, 2520, 1360, 3180, (p3.ox + 250, p3.oy - 90), 5)
-viewport(1560, 2520, 2600, 3180, (p2.ox + 250, p2.oy - 90), 5)
-viewport(2740, 2520, 3700, 3180, (p1.ox + 200, p1.oy - 70), 5)
+viewport(420, 2520, 1360, 3180, (p3.ox + ((420 + 1360) / 2 - 576) / 1.2, p3.oy + (2651 - (2520 + 3180) / 2) / 1.2), 5)
+viewport(1560, 2520, 2600, 3180, (p2.ox + ((1560 + 2600) / 2 - 1769) / 1.2, p2.oy + (2796 - (2520 + 3180) / 2) / 1.2), 5)
+viewport(2740, 2520, 3700, 3180, (p1.ox + ((2740 + 3700) / 2 - 2908) / 1.2, p1.oy + (2805 - (2520 + 3180) / 2) / 1.2), 5)
 
 # ---- title block (paper space, mm)
 tb = dict(layer="A-TTLB")
