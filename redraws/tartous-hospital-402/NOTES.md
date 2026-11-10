@@ -8,6 +8,7 @@ Source: a phone photo (PDF) of the 1982 original. Project 452, Tartous Hospital,
 | `tartous_402_section_AA_details.dxf` | The CAD drawing (AutoCAD 2018 DXF). Open it in AutoCAD and use **SAVEAS → DWG**. |
 | `preview_sheet_165.pdf` / `.png` | A plot preview of the paper-space sheet. |
 | `build_dxf.py` | The script that generates the DXF (`pip install ezdxf`, then `python build_dxf.py`). |
+| `render_preview.py` | Plots the sheet at true A1 size with real line weights (`python render_preview.py file.dxf out.pdf 150`). |
 
 ## Drawing set-up
 - **Model space is 1:1 in centimetres** (`INSUNITS` = cm), because every dimension on the original is in cm.
@@ -66,6 +67,9 @@ Source: a phone photo (PDF) of the 1982 original. Project 452, Tartous Hospital,
 **Plans:**
 - Plan 3.3: 120 + 30 = 150 from grid 6.
 - Plan 1.1: 10/20/10, 220/20/220, 30/25/10/10/60, 20/15/45, column 25, wall 15.
+
+## Line weights (plot at 1:1 on A1)
+Cut walls and slabs 0.30 mm, stairs 0.25, floor finishes and ground 0.13, elevation/beyond lines, glazing, dims and grids 0.09. Cut walls and slabs are poché-filled (dark), as on the original. The thin double lines at grids 4 and 3 are 12 cm partitions, not solid columns, as drawn on the original.
 
 ## Inferred or scaled items (please verify)
 1. **Grid spacing in Section A-A.** No horizontal dimensions are written, so the spacing was scaled from the corrected photo: 6→5 = 465, 5→4 = 390, 4→3 = 570, 3→2 = 365, 2→1 = 480 (±10 cm). These are shown as magenta dimensions.

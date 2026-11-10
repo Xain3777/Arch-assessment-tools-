@@ -27,27 +27,27 @@ if "ARIAL" not in doc.styles:
 
 # ----------------------------------------------------------------- layers
 LAYERS = {
-    "A-WALL-CUT": (7, 50, "Continuous"),
-    "A-SLAB-CUT": (7, 50, "Continuous"),
+    "A-WALL-CUT": (7, 30, "Continuous"),
+    "A-SLAB-CUT": (7, 30, "Continuous"),
     "A-POCHE": (8, 0, "Continuous"),
-    "A-FLOR-FNSH": (7, 18, "Continuous"),
-    "A-ELEV": (8, 13, "Continuous"),
-    "A-ELEV-DOOR": (8, 18, "Continuous"),
-    "A-GLAZ": (4, 18, "Continuous"),
-    "A-STAIR": (7, 35, "Continuous"),
-    "A-STAIR-BEYOND": (8, 18, "Continuous"),
-    "A-HRAL": (8, 18, "Continuous"),
-    "A-HATCH": (8, 9, "Continuous"),
-    "A-GRND": (8, 18, "Continuous"),
-    "A-GRID": (1, 18, "CENTER"),
-    "A-GRID-BUBL": (1, 25, "Continuous"),
-    "A-ANNO-DIMS": (3, 18, "Continuous"),
-    "A-ANNO-LEVL": (3, 18, "Continuous"),
-    "A-ANNO-TEXT": (7, 25, "Continuous"),
+    "A-FLOR-FNSH": (7, 13, "Continuous"),
+    "A-ELEV": (7, 9, "Continuous"),
+    "A-ELEV-DOOR": (7, 9, "Continuous"),
+    "A-GLAZ": (4, 9, "Continuous"),
+    "A-STAIR": (7, 25, "Continuous"),
+    "A-STAIR-BEYOND": (7, 13, "Continuous"),
+    "A-HRAL": (7, 9, "Continuous"),
+    "A-HATCH": (8, 5, "Continuous"),
+    "A-GRND": (8, 13, "Continuous"),
+    "A-GRID": (1, 9, "CENTER"),
+    "A-GRID-BUBL": (1, 13, "Continuous"),
+    "A-ANNO-DIMS": (3, 9, "Continuous"),
+    "A-ANNO-LEVL": (3, 9, "Continuous"),
+    "A-ANNO-TEXT": (7, 18, "Continuous"),
     "A-ANNO-TITL": (7, 35, "Continuous"),
-    "A-SECT-MARK": (2, 25, "DASHDOT"),
-    "A-DETL-CALL": (2, 18, "DASHED"),
-    "A-HIDDEN": (8, 13, "DASHED"),
+    "A-SECT-MARK": (2, 18, "DASHDOT"),
+    "A-DETL-CALL": (2, 13, "DASHED"),
+    "A-HIDDEN": (8, 9, "DASHED"),
     "A-SHEET": (7, 50, "Continuous"),
     "A-TTLB": (7, 25, "Continuous"),
     "Z-INFERRED": (6, 25, "Continuous"),
@@ -108,6 +108,7 @@ class Ctx:
         if color is not None:
             attrs["color"] = color
         h = msp.add_hatch(dxfattribs=attrs)
+        h.dxf.lineweight = 0
         if pattern == "SOLID":
             h.set_solid_fill(color=color if color is not None else 8)
         else:
@@ -313,7 +314,8 @@ glazing_cut(aa, FAC_O + 2, FAC_I - 2, 1345, 1500)
 aa.cutrect(GF_GLZ, 885, GF_GLZ + 15, 975)
 glazing_cut(aa, GF_GLZ + 2, GF_GLZ + 13, 975, 1205)
 # ---- ground floor slab on grade (+885) and basement
-aa.cutrect(-30, 865, BAS_L0, 885, "A-SLAB-CUT")
+aa.cutrect(-30, 865, BAS_L0, 885, "A-SLAB-CUT", fill=False)
+aa.line((-30, 877), (BAS_L0, 877), "A-FLOR-FNSH")
 aa.cutrect(-30, 800, -15, 865, "A-WALL-CUT")                      # edge ground beam
 aa.hatch([(-15, 840), (BAS_L0, 840), (BAS_L0, 865), (-15, 865)], "GRAVEL", 2.0)
 aa.line((-15, 840), (BAS_L0, 840), "A-GRND")
@@ -331,10 +333,11 @@ for x0, x1 in ((BAS_L0, BAS_L1), (CORE_L0, CORE_L1), (CORE_R0, CORE_R1)):
 # core roof slab
 aa.cutrect(CORE_L1, 2255, CORE_R0, 2275, "A-SLAB-CUT")
 aa.line((CORE_L0, 2387), (CORE_R1, 2387), "A-WALL-CUT")
-# columns (cut) at grids 4 & 3 on each storey
+# partitions at grids 4 & 3 (thin double line on the original, 12 cm)
 for x0, x1 in cols:
+    xc = (x0 + x1) / 2
     for y0, y1 in ((885, 1205), (1255, 1555), (1605, 1905)):
-        aa.cutrect(x0, y0, x1, y1)
+        aa.cutrect(xc - 6, y0, xc + 6, y1, fill=False)
 
 # exterior ground
 aa.line((-320, 870), (-30, 870), "A-GRND")
@@ -445,7 +448,7 @@ b.breakline((240, 1190), (240, 1265), "A-SLAB-CUT")
 # ground floor
 b.cutrect(183, 885, 198, 975)
 glazing_cut(b, 185, 196, 975, 1205)
-b.cutrect(-21, 865, 240, 885, "A-SLAB-CUT")
+b.cutrect(-21, 865, 240, 885, "A-SLAB-CUT", fill=False)
 b.line((-21, 877), (240, 877), "A-FLOR-FNSH")
 b.hatch([(-21, 800), (240, 800), (240, 865), (-21, 865)], "GRAVEL", 1.0)
 b.cutrect(-35, 815, -21, 885)
@@ -487,7 +490,7 @@ for i in range(1, 10):
     a = math.radians(180 + 90 * i / 9)
     wp.append((29 + 10 * math.cos(a), 1966 + 10 * math.sin(a)))
 wp += [(99, 1956)]
-cc.pline(wp, "A-STAIR", const_width=0.35)
+cc.pline(wp, "A-STAIR", const_width=0.2)
 # roof build-up
 for y in (1950, 1954, 1956, 1960):
     cc.line((17 if y < 1956 else 29, y), (99, y), "A-FLOR-FNSH")
