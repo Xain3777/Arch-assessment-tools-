@@ -169,13 +169,16 @@ def extract_walls(geom: np.ndarray, cfg: ExtractConfig, dpi: float,
         x, y, w, h, area = st[i]
         if area < tmin * tmin:
             continue
-        comp = (labels == i).astype(np.uint8)
-        cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        comp = (labels[y:y + h, x:x + w] == i).astype(np.uint8)
+        cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE, offset=(int(x), int(y)))
         cnt = max(cnts, key=cv2.contourArea)
         (cx, cy), (rw, rh), ang = cv2.minAreaRect(cnt)
         long_, short = max(rw, rh), min(rw, rh)
         rect_fill = area / max(rw * rh, 1)
-        touches_wall = bool((cv2.dilate(comp, _kernel(5, 5)) & covered).any())
+        m = 3
+        ya, yb, xa, xb = max(y - m, 0), y + h + m, max(x - m, 0), x + w + m
+        win = (labels[ya:yb, xa:xb] == i).astype(np.uint8)
+        touches_wall = bool((cv2.dilate(win, _kernel(5, 5)) & covered[ya:yb, xa:xb]).any())
         if long_ / max(short, 1) >= 3 and rect_fill > 0.75 and short <= t95 * 1.3:
             # straight diagonal wall
             a = math.radians(ang if rw >= rh else ang + 90)
@@ -204,72 +207,61 @@ _NEIGH = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
 
 def trace_skeleton(skel: np.ndarray) -> list[np.ndarray]:
-    """Trace a 1-px skeleton into pixel paths (arrays of (x, y)) between junctions/ends."""
-    sk = skel.astype(np.uint8)
-    pad = np.pad(sk, 1)
-    kernel = np.ones((3, 3), np.float32)
-    kernel[1, 1] = 0
-    deg = cv2.filter2D(pad, cv2.CV_16S, kernel, borderType=cv2.BORDER_CONSTANT)
-    deg = deg * pad
-    ys, xs = np.nonzero(pad)
-    pixels = set(zip(ys.tolist(), xs.tolist()))
-    is_node = {p for p in pixels if deg[p] != 2}
-    visited_edges: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+    """Trace a 1-px skeleton into ordered pixel paths (arrays of (x, y)).
+
+    Vectorised: junction pixels (>= 3 neighbours) are removed, the remaining
+    simple curves are labelled with OpenCV and each is ordered with
+    ``findContours`` (a 1-px open curve's contour runs out and back, so its first
+    half from an end point is the ordered path).  Path ends are then extended to
+    the centroid of the junction they touch, keeping the topology.  Linear in the
+    number of skeleton pixels and memory-light (no per-pixel Python objects).
+    """
+    sk = (skel > 0).astype(np.uint8)
+    if not sk.any():
+        return []
+    k = np.ones((3, 3), np.float32)
+    k[1, 1] = 0
+    deg = cv2.filter2D(sk, cv2.CV_8U, k, borderType=cv2.BORDER_CONSTANT) * sk
+    junction = ((deg >= 3) & (sk > 0)).astype(np.uint8)
+    edges = sk & (1 - junction)
+    n_j, jlab, _, jcent = cv2.connectedComponentsWithStats(junction, connectivity=8)
+    n_e, elab, est, _ = cv2.connectedComponentsWithStats(edges, connectivity=8)
+    edeg = cv2.filter2D(edges, cv2.CV_8U, k, borderType=cv2.BORDER_CONSTANT) * edges
+    H, W = sk.shape
     paths: list[np.ndarray] = []
-
-    def walk(start, nxt):
-        path = [start, nxt]
-        prev, cur = start, nxt
-        visited_edges.add((start, nxt))
-        visited_edges.add((nxt, start))
-        while cur not in is_node:
-            cands = [(cur[0] + dy, cur[1] + dx) for dy, dx in _NEIGH]
-            cands = [c for c in cands if c in pixels and c != prev and (cur, c) not in visited_edges]
-            if not cands:
-                break
-            # prefer 4-neighbours to avoid corner-cutting duplicates
-            cands.sort(key=lambda c: abs(c[0] - cur[0]) + abs(c[1] - cur[1]))
-            nx = cands[0]
-            visited_edges.add((cur, nx))
-            visited_edges.add((nx, cur))
-            prev, cur = cur, nx
-            path.append(cur)
-            if cur == start:
-                break
-        return path
-
-    # junction pixels that touch each other form one junction
-    claimed: set[tuple[int, int]] = set()
-    for node in is_node:
-        for dy, dx in _NEIGH:
-            nb = (node[0] + dy, node[1] + dx)
-            if nb not in pixels or (node, nb) in visited_edges:
-                continue
-            if nb in is_node:  # edge inside a junction cluster - not a stroke
-                visited_edges.add((node, nb))
-                visited_edges.add((nb, node))
-                continue
-            if nb in claimed:
-                continue
-            path = walk(node, nb)
-            claimed.update(path[1:-1] if path[-1] in is_node else path[1:])
-            paths.append(path)
-    # isolated cycles (no nodes)
-    seen = {p for path in paths for p in path}
-    for p in pixels:
-        if p in seen or p in is_node:
-            continue
-        nbs = [(p[0] + dy, p[1] + dx) for dy, dx in _NEIGH if (p[0] + dy, p[1] + dx) in pixels]
-        if not nbs:
-            continue
-        cyc = walk(p, nbs[0])
-        seen.update(cyc)
-        paths.append(cyc)
-    out = []
-    for path in paths:
-        arr = np.array([(x - 1, y - 1) for y, x in path], dtype=np.float64)
-        out.append(arr)
-    return out
+    for i in range(1, n_e):
+        x, y, w, h, area = est[i]
+        x0, y0 = max(x - 1, 0), max(y - 1, 0)
+        x1, y1 = min(x + w + 1, W), min(y + h + 1, H)
+        comp = (elab[y0:y1, x0:x1] == i).astype(np.uint8)
+        if area == 1:
+            pts = np.array([[x, y]], np.float64)
+        else:
+            cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            c = max(cnts, key=len).reshape(-1, 2)
+            local_deg = edeg[y0:y1, x0:x1]
+            ends = [j for j, (cx, cy) in enumerate(c) if local_deg[cy, cx] == 1]
+            if ends:  # open curve: walk from one end to the other
+                a = ends[0]
+                c = np.roll(c, -a, axis=0)
+                other = [j for j, (cx, cy) in enumerate(c) if j > 0 and local_deg[cy, cx] == 1]
+                c = c[: other[0] + 1] if other else c
+            else:  # closed loop
+                c = np.vstack([c, c[:1]])
+            pts = (c + [x0, y0]).astype(np.float64)
+        # reconnect both ends to adjacent junctions
+        for end in (0, -1):
+            ex, ey = int(pts[end][0]), int(pts[end][1])
+            win = jlab[max(ey - 1, 0):ey + 2, max(ex - 1, 0):ex + 2]
+            js = win[win > 0]
+            if js.size:
+                cxy = jcent[int(js[0])]
+                if end == 0:
+                    pts = np.vstack([[cxy], pts])
+                else:
+                    pts = np.vstack([pts, [cxy]])
+        paths.append(pts)
+    return paths
 
 
 def fit_circle(pts: np.ndarray) -> tuple[float, float, float, float]:
