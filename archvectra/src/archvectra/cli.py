@@ -96,11 +96,24 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
-        print(f"archvectra: error: {exc}", file=sys.stderr)
-        return 2
+        msg, code = f"archvectra: error: {exc}", 2
     except Exception as exc:  # noqa: BLE001 - report, details are in run.log
-        print(f"archvectra: unexpected error: {type(exc).__name__}: {exc} (see run.log)", file=sys.stderr)
-        return 3
+        msg, code = f"archvectra: unexpected error: {type(exc).__name__}: {exc} (see run.log)", 3
+    print(msg, file=sys.stderr)
+    _write_error_file(args, msg)
+    return code
+
+
+def _write_error_file(args, msg: str) -> None:
+    """Leave the error in <output>/error.txt so callers without a console (AutoCAD) can show it."""
+    out = getattr(args, "output", None)
+    if not out:
+        return
+    try:
+        Path(out).mkdir(parents=True, exist_ok=True)
+        (Path(out) / "error.txt").write_text(msg + "\n", encoding="utf-8")
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

@@ -67,10 +67,25 @@
   ;; open a file with its Windows default program (PDF viewer, text editor ...)
   (if (findfile path) (archvectra:shell-run (archvectra:quote path) nil)))
 
-(defun archvectra:outdir (pdf)
-  (strcat (vl-filename-directory pdf) "\\" (vl-filename-base pdf) "_archvectra"))
+(defun archvectra:jobdir (/ base stamp dir)
+  ;; fresh ASCII-only working folder under %TEMP% (avoids problems with Arabic /
+  ;; non-Latin characters, spaces and long paths in the PDF's own location)
+  (setq base (strcat (getenv "TEMP") "\\ArchVectra"))
+  (vl-mkdir base)
+  (setq stamp (menucmd "M=$(edtime,$(getvar,date),YYYYMODDHHMMSS)")
+        dir   (strcat base "\\job" stamp))
+  (vl-mkdir dir)
+  dir)
 
-(defun archvectra:run-engine (pdf page scale / exe out args rc)
+(defun archvectra:read-text (f / fh line txt)
+  (if (and f (findfile f))
+    (progn
+      (setq fh (open f "r") txt "")
+      (while (setq line (read-line fh)) (setq txt (strcat txt "\n  " line)))
+      (close fh)
+      txt)))
+
+(defun archvectra:run-engine (pdf page scale / exe job in out args rc err)
   ;; page is 1-based; scale = N for 1:N, or nil when unknown.  Returns output folder or nil.
   (setq exe (archvectra:exe))
   (cond
@@ -78,23 +93,33 @@
      (princ "\nArchVectra engine not found - run ARCHVECTRA-SETUP and select archvectra.exe.")
      nil)
     (T
-     (setq out  (archvectra:outdir pdf)
-           args (strcat "process " (archvectra:quote pdf)
-                        " -o " (archvectra:quote out)
-                        " --page " (itoa (1- page))
-                        (if scale (strcat " --scale " (rtos scale 2 6)) "")))
-     (princ (strcat "\nArchVectra: processing " (vl-filename-base pdf) ".pdf - please wait ..."))
-     (princ)
-     (setq rc (archvectra:shell-run (strcat (archvectra:quote exe) " " args) T))
-     (cond
-       ((null rc) nil)
-       ((/= rc 0)
-        (princ (strcat "\nArchVectra failed (exit code " (itoa rc) "). Details: " out "\\run.log"))
-        nil)
-       (T (setq *archvectra-last-out* out) out)))))
+     (setq job (archvectra:jobdir)
+           in  (strcat job "\\input.pdf")
+           out (strcat job "\\out"))
+     (if (not (vl-file-copy pdf in))
+       (progn (princ (strcat "\nCould not copy the PDF to " in " (is it open/locked?)")) nil)
+       (progn
+         (setq args (strcat "process " (archvectra:quote in)
+                            " -o " (archvectra:quote out)
+                            " --page " (itoa (1- page))
+                            (if scale (strcat " --scale " (rtos scale 2 6)) "")))
+         (princ (strcat "\nArchVectra: processing " (vl-filename-base pdf) ".pdf - please wait ..."))
+         (princ)
+         (setq rc (archvectra:shell-run (strcat (archvectra:quote exe) " " args) T))
+         (cond
+           ((null rc) nil)
+           ((/= rc 0)
+            (setq err (archvectra:read-text (strcat out "\\error.txt")))
+            (princ (strcat "\nArchVectra failed (exit code " (itoa rc) ")."
+                           (if err err "")
+                           "\nFolder: " out))
+            nil)
+           (T (setq *archvectra-last-out* out)
+              (princ (strcat "\nResults saved in: " out))
+              out)))))))
 
-(defun archvectra:result-dxf (pdf out)
-  (findfile (strcat out "\\02_vector\\" (vl-filename-base pdf) "_clean.dxf")))
+(defun archvectra:result-dxf (out)
+  (findfile (strcat out "\\02_vector\\input_clean.dxf")))
 
 (defun archvectra:show-summary (out / f fh line)
   (if (setq f (findfile (strcat out "\\summary.txt")))
@@ -162,7 +187,7 @@
       (if (null scl) (setq scl 100.0))
       (if (= scl 0) (setq scl nil))
       (if (setq out (archvectra:run-engine pdf page scl))
-        (if (setq dxf (archvectra:result-dxf pdf out))
+        (if (setq dxf (archvectra:result-dxf out))
           (progn
             (setq pt (getpoint "\nInsertion point <0,0>: "))
             (if (null pt) (setq pt '(0.0 0.0 0.0)))
@@ -193,7 +218,7 @@
      (cond
        ((null pdf) (princ (strcat "\nCannot find the PDF file: " (cdr (assoc 1 def)))))
        ((setq out (archvectra:run-engine pdf page nil))   ; sheet mm, page origin = lower-left
-        (setq dxf (archvectra:result-dxf pdf out)
+        (setq dxf (archvectra:result-dxf out)
               pg  (archvectra:page-mm out))
         ;; scale = underlay width in drawing units / sheet width in mm (unrotated bounding box)
         (vla-getboundingbox (vlax-ename->vla-object (car sel)) 'minp 'maxp)
