@@ -1,6 +1,6 @@
-# archvectra default configuration (generated from archvectra/config.py).
+# ArchVectra default configuration (generated from archvectra/config.py).
 # All lengths are millimetres on the drawing sheet unless the key says otherwise.
-# Override any value on the command line:  --set correct.snap_distance_mm=2.0
+# Override any value on the command line:  --set correct.line_chain_max_gap_mm=6
 
 # Stage A - acquisition
 [input]
@@ -21,6 +21,8 @@ threshold = "otsu"
 adaptive_block_mm = 6.0
 adaptive_c = 12
 min_component_area_mm2 = 0.05
+isolated_speck_area_mm2 = 0.25
+isolation_radius_mm = 1.5
 close_gaps_mm = 0.0
 perspective = false
 
@@ -34,8 +36,11 @@ detect_curves = true
 arc_max_residual_mm = 0.25
 arc_min_sweep_deg = 25.0
 column_max_size_mm = 8.0
+fragment_min_length_mm = 0.6
+fragment_max_width_mm = 0.7
+fragment_min_aspect = 3.0
 
-# Stage E/D - correction and openings (sheet mm; defaults suit 1:100)
+# Stage E/D - correction, line chaining and openings (sheet mm; defaults suit 1:100)
 [correct]
 angle_tolerance_deg = 2.0
 collinear_offset_mm = 0.35
@@ -45,6 +50,11 @@ opening_min_mm = 5.0
 opening_max_mm = 25.0
 thickness_cluster_tolerance = 0.18
 door_arc_radius_tolerance = 0.25
+chain_lines = true
+line_chain_max_gap_mm = 4.0
+line_chain_min_coverage = 0.45
+line_chain_angle_deg = 2.5
+line_chain_offset_mm = 0.4
 pair_double_line_walls = true
 double_wall_min_mm = 0.8
 double_wall_max_mm = 4.0

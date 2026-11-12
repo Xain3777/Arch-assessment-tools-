@@ -77,3 +77,41 @@ def test_gap_becomes_opening_and_short_gap_is_flagged():
     codes = [f.code for f in d.flags]
     assert "short-gap" in codes and "unclassified-opening" in codes
     assert len(d.walls()) == 3  # nothing was invented or removed
+
+
+def test_broken_scan_line_becomes_one_continuous_line():
+    """A straight line broken into many pieces by poor scanning -> one line; real gaps stay open."""
+    import cv2
+    import numpy as np
+
+    from archvectra.config import Config
+    from archvectra.correct import correct
+    from archvectra.extract import extract
+
+    rng = np.random.default_rng(1)
+    img = np.zeros((600, 2400), np.uint8)
+    x = 100
+    while x < 1100:  # first run: pieces 6-40 px, gaps 3-25 px, slight jitter (300 dpi)
+        L = int(rng.integers(6, 40))
+        y = 300 + int(rng.integers(-1, 2))
+        cv2.line(img, (x, y), (x + L, y), 1, 3)
+        x += L + int(rng.integers(3, 25))
+    x = 1250  # 150 px (12.7 mm) gap = a real opening, then a second broken run
+    while x < 2300:
+        L = int(rng.integers(6, 40))
+        cv2.line(img, (x, 300), (x + L, 300), 1, 3)
+        x += L + int(rng.integers(3, 25))
+    for k in range(5):  # isolated "1"-like text strokes far apart must NOT become a line
+        cv2.line(img, (300 + k * 300, 450), (300 + k * 300, 480), 1, 3)
+    cfg = Config()
+    ex = extract(img, cfg.extract, 300)
+    d = Drawing(2400, 600, 300.0, (1, 0, 0, 1, 0, 0), (2400, 600), Scale(25.4 / 300))
+    d.segments, d.arcs = ex.segments, ex.arcs
+    correct(d, cfg.correct)
+    long_lines = sorted((s for s in d.segments if s.kind == "line" and s.layer == "A-DETL" and s.length > 300),
+                        key=lambda s: s.x1)
+    assert len(long_lines) == 2, [(round(s.x1), round(s.x2)) for s in long_lines]
+    a, b = long_lines
+    assert a.y1 == a.y2 and abs(a.y1 - 300) < 2
+    assert a.x1 < 110 and a.x2 > 1080 and b.x1 > 1240  # opening between them preserved
+    assert not [s for s in d.segments if s.layer == "A-DETL" and abs(s.y1 - 465) < 20 and s.length > 40]

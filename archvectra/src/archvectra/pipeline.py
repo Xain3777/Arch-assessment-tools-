@@ -121,7 +121,7 @@ def _process_raster(pdf: Path, cfg: Config, out: Path, kind: str) -> tuple[Drawi
         _merge_vectors(drawing, vc, to_frame=True)
         drawing.log("hybrid_vectors", **vc.stats)
 
-    correct(drawing, cfg.correct)
+    correct(drawing, cfg.correct, min_line_length_mm=cfg.extract.min_line_length_mm)
     find_openings(drawing, cfg.correct)
     if cfg.correct.pair_double_line_walls:
         pair_double_line_walls(drawing, cfg.correct)
@@ -147,6 +147,18 @@ def _process_raster(pdf: Path, cfg: Config, out: Path, kind: str) -> tuple[Drawi
                              "ink not explained by extracted geometry; kept as outline", "warning")
     residual_kept = keep[labels].astype(np.uint8)
     anno_mask = ex.annotation_mask | residual_kept
+    # annotation blobs that the vector geometry already explains (e.g. pieces of a broken
+    # line at a crossing, now replaced by a continuous line) are not traced a second time
+    covered = cv2.dilate(recon, k)
+    n_a, alab, ast, _ = cv2.connectedComponentsWithStats(anno_mask, connectivity=8)
+    absorbed = 0
+    for i in range(1, n_a):
+        x, y, w, h, area = ast[i]
+        sub = alab[y:y + h, x:x + w] == i
+        if covered[y:y + h, x:x + w][sub].mean() >= 0.85:
+            anno_mask[y:y + h, x:x + w][sub] = 0
+            absorbed += 1
+    drawing.log("annotation_absorbed_by_geometry", components=absorbed)
     if cfg.export.include_annotations:
         polys, backend = trace(anno_mask, cfg.export.annotation_backend)
         drawing.polygons.extend(polys)

@@ -75,7 +75,18 @@ patterns) is preserved. This is a *section* drawing, so wall/opening semantics (
 rectangular fills, 1 door, 2 windows, 45 review flags) are not meaningful — no ground truth exists
 for it and **no accuracy claim is made**.
 
-### 2.4 Not tested (no sample available in this environment)
+### 2.4 First real scan (user sheet, 2026-11-12)
+
+914 x 1592 mm floor-plan scan stored as 104 image tiles, processed on the user's Windows laptop at
+200 DPI (7197 x 12538 px): ink precision 0.990, recall 0.949; 869 wall pieces, 33 doors, 21 windows,
+199 unclassified gaps, 15 rooms, 1 249 review flags; 913 s with the first engine. Observed problems,
+both fixed afterwards: (1) the sheet exceeded the raster size limit at 300 DPI (now rendered at a
+lower DPI automatically); (2) lines broken by poor scanning came out as many short pieces and text
+outlines (now chained into continuous lines - see the broken-grid test in `tests/test_correct.py`).
+Run time on a synthetic sheet of the same size dropped from comparable to the above to ~200 s
+(3.5 GB peak RAM) after vectorising the skeleton tracer. No ground truth exists for this sheet.
+
+### 2.5 Not tested (no sample available in this environment)
 
 * A real scanned architectural PDF (only synthetic scans were available).
 * A real hybrid PDF (scan + vector mark-up).

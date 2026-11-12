@@ -56,6 +56,9 @@ class ExtractConfig:
     arc_max_residual_mm: float = 0.25
     arc_min_sweep_deg: float = 25.0
     column_max_size_mm: float = 8.0  # compact solid blobs up to this size are columns
+    fragment_min_length_mm: float = 0.6  # small elongated blobs this long may be pieces of a broken line
+    fragment_max_width_mm: float = 0.7
+    fragment_min_aspect: float = 3.0
 
 
 @dataclass
@@ -68,6 +71,11 @@ class CorrectConfig:
     opening_max_mm: float = 25.0
     thickness_cluster_tolerance: float = 0.18  # relative tolerance for wall-thickness families
     door_arc_radius_tolerance: float = 0.25  # |r - opening width| / width
+    chain_lines: bool = True  # join broken / fragmented lines into one continuous line
+    line_chain_max_gap_mm: float = 4.0  # largest single gap inside a chain (door gaps are larger)
+    line_chain_min_coverage: float = 0.45  # ink must cover this share of the chained length
+    line_chain_angle_deg: float = 2.5
+    line_chain_offset_mm: float = 0.4
     pair_double_line_walls: bool = True
     double_wall_min_mm: float = 0.8
     double_wall_max_mm: float = 4.0

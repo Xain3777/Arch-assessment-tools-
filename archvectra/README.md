@@ -23,8 +23,10 @@ openings are never filled, and uncertain results are flagged for review.
    binarises (Otsu or adaptive), removes specks.
 4. Extracts solid walls (centreline + thickness), diagonal walls, columns, thin lines, arcs, curves;
    separates text/symbols, which are kept as outlines.
-5. Snaps near-orthogonal lines, merges collinear pieces across scan breaks, closes L/T corners,
-   groups wall thicknesses into families.
+5. Snaps near-orthogonal lines, **chains broken / fragmented lines into one continuous line**
+   (pieces on one straight line, gaps up to 4 mm, or up to 8 mm where another line crosses; ink must
+   cover at least 45 % of the length - door-sized gaps are never bridged), closes L/T corners, groups
+   wall thicknesses into families.
 6. Finds openings from free wall ends and classifies them (door: swing arc or leaf; window: glazing
    lines; otherwise *unclassified* + review flag). Reconstructs rooms and areas.
 7. Exports clean PDF (page-identical size, toggleable layers), SVG, DXF (real-world mm when calibrated,

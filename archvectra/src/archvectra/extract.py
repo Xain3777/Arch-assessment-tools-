@@ -60,11 +60,16 @@ def _kernel(w: int, h: int) -> np.ndarray:
     return cv2.getStructuringElement(cv2.MORPH_RECT, (max(1, w), max(1, h)))
 
 
-def separate_annotation(binary: np.ndarray, max_size_px: float, min_solid_px: float) -> tuple[np.ndarray, np.ndarray]:
-    """Split ink into (geometry, annotation) by connected-component size.
+def separate_annotation(binary: np.ndarray, max_size_px: float, min_solid_px: float,
+                        frag: tuple[float, float, float] | None = None):
+    """Split ink into (geometry, annotation[, fragments]) by connected-component size.
 
-    Small isolated components are annotation (text, symbols, dashes) unless they
-    are solid blobs at least ``min_solid_px`` thick (columns, piers).
+    Small isolated components are annotation (text, symbols) unless they are solid
+    blobs at least ``min_solid_px`` thick (columns, piers).  With ``frag =
+    (min_len_px, max_width_px, min_aspect)`` small *elongated* components are
+    returned separately as line fragments (pieces of broken lines / dashes); they
+    are chained into continuous lines later, and only unchained ones fall back
+    to annotation.
     """
     n, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
     w = stats[:, cv2.CC_STAT_WIDTH]
@@ -75,7 +80,29 @@ def separate_annotation(binary: np.ndarray, max_size_px: float, min_solid_px: fl
     solid = (fill > 0.8) & (np.minimum(w, h) >= min_solid_px)
     is_anno = (big <= max_size_px) & ~solid
     is_anno[0] = False
+    fragments: list[Segment] = []
+    if frag is not None:
+        min_len, max_w, min_aspect = frag
+        binary = binary.copy()  # never modify the caller's array
+        for i in np.nonzero(is_anno)[0]:
+            x, y, ww, hh, a = stats[i]
+            if max(ww, hh) < min_len:
+                continue
+            sub = (labels[y:y + hh, x:x + ww] == i).astype(np.uint8)
+            cnts, _ = cv2.findContours(sub, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE, offset=(int(x), int(y)))
+            (cx, cy), (rw, rh), ang = cv2.minAreaRect(max(cnts, key=cv2.contourArea))
+            long_, short = max(rw, rh), max(min(rw, rh), 1.0)
+            if long_ < min_len or short > max_w or long_ / short < min_aspect:
+                continue
+            t = math.radians(ang if rw >= rh else ang + 90)
+            dx, dy = math.cos(t) * long_ / 2, math.sin(t) * long_ / 2
+            fragments.append(Segment(cx - dx, cy - dy, cx + dx, cy + dy, float(min(short, max_w)), "line", LAYER_LINE,
+                                     0.8, "raster-fragment", attrs={"fragment": True}))
+            is_anno[i] = False
+            binary[y:y + hh, x:x + ww][sub > 0] = 0  # handled as a fragment, not traced again
     anno = is_anno[labels].astype(np.uint8)
+    if frag is not None:
+        return binary & (1 - anno), anno, fragments
     return binary & (1 - anno), anno
 
 
@@ -374,32 +401,75 @@ def extract_thin(thin: np.ndarray, cfg: ExtractConfig, dpi: float) -> tuple[list
     paths = trace_skeleton(sk)
     eps = max(0.75, mm_to_px(cfg.rdp_epsilon_mm, dpi))
     min_len = mm_to_px(cfg.min_line_length_mm, dpi)
+    frag_len = mm_to_px(cfg.fragment_min_length_mm, dpi)
     arc_res = max(0.8, mm_to_px(cfg.arc_max_residual_mm, dpi))
     segs: list[Segment] = []
     arcs: list[Arc] = []
     polys: list[Polyline] = []
     for p in paths:
-        s, a, pl = classify_path(p, eps, min_len * 0.5, arc_res, cfg.arc_min_sweep_deg, stroke,
+        s, a, pl = classify_path(p, eps, frag_len, arc_res, cfg.arc_min_sweep_deg, stroke,
                                  cfg.detect_curves, "raster-skeleton")
         segs += s
         arcs += a
         polys += pl
-    # drop isolated very short leftovers (joined later by collinear merging if real)
-    segs = [s for s in segs if s.length >= min_len * 0.25]
+    # short pieces are kept as fragments: line chaining joins them or returns them to annotation
+    segs = [s for s in segs if s.length >= frag_len]
+    for s in segs:
+        if s.length < min_len:
+            s.attrs["fragment"] = True
     return segs, arcs, polys, {"paths": len(paths), "thin_stroke_px": round(stroke, 2),
                                "thin_segments": len(segs), "arcs": len(arcs), "polylines": len(polys)}
+
+
+def annotation_stroke_candidates(anno: np.ndarray, cfg: ExtractConfig, dpi: float) -> list[Segment]:
+    """Straight thin strokes inside annotation-sized blobs, as *candidate* line pieces.
+
+    Where a broken line crosses another one, its pieces fuse into small L/T/+ blobs
+    that look like symbols.  Their straight strokes are offered to line chaining as
+    candidates; a candidate is only used when it extends a chain of real line
+    pieces (so text on its own never turns into lines) and is otherwise discarded -
+    the blob itself stays annotation.
+    """
+    if not anno.any():
+        return []
+    max_w = mm_to_px(cfg.fragment_max_width_mm, dpi)
+    frag_len = mm_to_px(cfg.fragment_min_length_mm, dpi)
+    eps = max(0.75, mm_to_px(cfg.rdp_epsilon_mm, dpi))
+    dt = cv2.distanceTransform(anno, cv2.DIST_L2, 3)
+    sk = skeletonize(anno.astype(bool))
+    out: list[Segment] = []
+    for path in trace_skeleton(sk):
+        segs, _, _ = classify_path(path, eps, frag_len, 1.0, 360.0, 1.0, False, "annotation-stroke")
+        for sg in segs:
+            if sg.length < frag_len:
+                continue
+            mx, my = int(round((sg.x1 + sg.x2) / 2)), int(round((sg.y1 + sg.y2) / 2))
+            if not (0 <= my < dt.shape[0] and 0 <= mx < dt.shape[1]):
+                continue
+            w = 2.0 * float(dt[my, mx])
+            if w > max_w or w <= 0:
+                continue
+            sg.thickness = w
+            sg.confidence = 0.6
+            sg.attrs.update({"fragment": True, "candidate": True})
+            out.append(sg)
+    return out
 
 
 # --------------------------------------------------------------------------- main entry
 def extract(binary: np.ndarray, cfg: ExtractConfig, dpi: float, heal_mm: float = 0.0) -> Extraction:
     max_anno = mm_to_px(cfg.text_max_size_mm, dpi)
-    geom, anno = separate_annotation(binary, max_anno, 2 * mm_to_px(cfg.wall_min_thickness_mm, dpi))
+    geom, anno, fragments = separate_annotation(
+        binary, max_anno, 2 * mm_to_px(cfg.wall_min_thickness_mm, dpi),
+        (mm_to_px(cfg.fragment_min_length_mm, dpi), mm_to_px(cfg.fragment_max_width_mm, dpi), cfg.fragment_min_aspect))
+    candidates = annotation_stroke_candidates(anno, cfg, dpi)
     walls, polys, wall_mask, wstats = extract_walls(geom, cfg, dpi, int(round(mm_to_px(heal_mm, dpi))))
     # thin = geometry ink not explained by the solid wall mask
     grown = cv2.dilate(wall_mask, _kernel(3, 3)) if wall_mask.any() else wall_mask
     thin = geom & (1 - grown)
     thin = cv2.morphologyEx(thin, cv2.MORPH_OPEN, _kernel(1, 1))
     tsegs, arcs, plines, tstats = extract_thin(thin, cfg, dpi)
-    ex = Extraction(walls + tsegs, arcs, plines, polys, anno, wall_mask, thin)
-    ex.stats = {"annotation_px": int(anno.sum()), **wstats, **tstats}
+    ex = Extraction(walls + tsegs + fragments + candidates, arcs, plines, polys, anno, wall_mask, thin)
+    ex.stats = {"annotation_px": int(anno.sum()), "line_fragments": len(fragments),
+                "annotation_stroke_candidates": len(candidates), **wstats, **tstats}
     return ex
