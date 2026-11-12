@@ -25,7 +25,7 @@ class InputConfig:
     page: int = 0
     dpi: int = 300  # used when a page has to be rendered
     prefer_native_image: bool = True  # use the embedded scan at native resolution when possible
-    max_pixels: int = 160_000_000  # refuse to allocate larger rasters
+    max_pixels: int = 100_000_000  # larger sheets are rendered at a lower DPI (~3 GB RAM at this size)
     min_dpi_warning: int = 200  # warn when the effective resolution is below this
 
 

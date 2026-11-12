@@ -77,3 +77,27 @@ def test_vector_extraction_keeps_paths_text_and_style(vector_pdf):
     assert vc.stats["curves"] >= 4  # door swings
     assert {t.text for t in vc.texts} >= {"LIVING", "KITCHEN", "14000"}
     assert all(s.attrs["style"]["stroke"] == (0.0, 0.0, 0.0) for s in vc.segments)
+
+
+def test_large_tiled_scan_is_rendered_at_reduced_dpi(tmp_path):
+    """A big sheet made of many image tiles must not fail; resolution is lowered to fit."""
+    import cv2
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=3400, height=2400)  # larger than A0 landscape
+    tile = np.full((200, 200), 255, np.uint8)
+    cv2.line(tile, (0, 100), (199, 100), 0, 4)
+    ok, buf = cv2.imencode(".png", tile)
+    for i in range(13):
+        for j in range(8):  # 104 tiles, 200 px over 261 x 300 pt -> ~55-48 dpi native
+            page.insert_image(pymupdf.Rect(i * 3400 / 13, j * 300, (i + 1) * 3400 / 13, (j + 1) * 300),
+                              stream=buf.tobytes())
+    p = tmp_path / "tiled.pdf"
+    doc.save(p)
+    (info,) = analyze_pdf(p)
+    assert info.kind == "raster" and len(info.images) == 104
+    rp = load_raster(p, 0, dpi=300, max_pixels=20_000_000, min_dpi=10)
+    assert rp.method == "rendered"
+    assert rp.gray.size <= 20_000_000 * 1.01
+    with pytest.raises(PdfInputError):
+        load_raster(p, 0, dpi=300, max_pixels=20_000_000, min_dpi=150)

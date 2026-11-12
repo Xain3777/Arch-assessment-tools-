@@ -7,7 +7,7 @@
 page = 0
 dpi = 300
 prefer_native_image = true
-max_pixels = 160000000
+max_pixels = 100000000
 min_dpi_warning = 200
 
 # Stage B - preprocessing (sizes in sheet millimetres)

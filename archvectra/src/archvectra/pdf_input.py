@@ -129,7 +129,7 @@ def _pixmap_to_gray(pix: pymupdf.Pixmap) -> np.ndarray:
 
 
 def load_raster(path: str | Path, page_index: int, dpi: int, prefer_native: bool = True,
-                max_pixels: int = 160_000_000) -> RasterPage:
+                max_pixels: int = 160_000_000, min_dpi: int = 100) -> RasterPage:
     with pymupdf.open(path) as doc:
         if not 0 <= page_index < len(doc):
             raise PdfInputError(f"page {page_index} out of range (document has {len(doc)} pages)")
@@ -156,8 +156,23 @@ def load_raster(path: str | Path, page_index: int, dpi: int, prefer_native: bool
                         notes.append(f"non-square pixels (sx={sx:.4f}, sy={sy:.4f} pt/px)")
                     return RasterPage(gray, dpi_x, (sx, 0.0, 0.0, sy, img.bbox[0], img.bbox[1]),
                                       size, "native-image", notes)
-        if size[0] * size[1] * (dpi / 72.0) ** 2 > max_pixels:
-            raise PdfInputError(f"rendering at {dpi} DPI exceeds input.max_pixels")
+        requested = dpi
+        # tiled / multi-image scans: rendering above the scan's own resolution adds nothing
+        if info.kind == "raster" and info.images:
+            native = max(im.effective_dpi for im in info.images)
+            if 72 <= native < dpi:
+                dpi = int(round(native))
+                notes.append(f"scan resolution is {native:.0f} DPI; rendered at that instead of {requested} DPI")
+        # very large sheets: lower the resolution to stay within input.max_pixels (memory)
+        fit = 72.0 * math.sqrt(max_pixels / (size[0] * size[1]))
+        if dpi > fit:
+            if fit < min_dpi:
+                raise PdfInputError(f"page is too large: even {min_dpi} DPI exceeds input.max_pixels "
+                                    f"({size[0] / 72 * 25.4:.0f} x {size[1] / 72 * 25.4:.0f} mm)")
+            dpi = int(fit)
+            notes.append(f"large sheet: rendered at {dpi} DPI instead of {requested} DPI to stay within "
+                         f"input.max_pixels")
+            log.warning("large sheet: rendering at %d DPI instead of %d DPI", dpi, requested)
         pix = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY, alpha=False)
         gray = _pixmap_to_gray(pix)
         s = size[0] / gray.shape[1]
