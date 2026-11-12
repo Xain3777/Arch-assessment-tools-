@@ -1,0 +1,224 @@
+{
+ "archvec_version": "0.1.0",
+ "python": "3.13.18",
+ "platform": "Linux-6.18.44-fc-v378-x86_64-with-glibc2.39",
+ "input": {
+  "path": "samples/synthetic_scan.pdf",
+  "sha256": "30d76861edc46921dce4be5fc9a5d0f8e1492ceefc978ce3f71c9b99794f6ca0"
+ },
+ "config": {
+  "input": {
+   "page": 0,
+   "dpi": 300,
+   "prefer_native_image": true,
+   "max_pixels": 160000000,
+   "min_dpi_warning": 200
+  },
+  "preprocess": {
+   "deskew": true,
+   "max_skew_deg": 5.0,
+   "denoise": "median",
+   "median_ksize": 3,
+   "clahe": false,
+   "threshold": "otsu",
+   "adaptive_block_mm": 6.0,
+   "adaptive_c": 12,
+   "min_component_area_mm2": 0.05,
+   "isolated_speck_area_mm2": 0.25,
+   "isolation_radius_mm": 1.5,
+   "close_gaps_mm": 0.0,
+   "perspective": false
+  },
+  "extract": {
+   "min_line_length_mm": 3.0,
+   "wall_min_thickness_mm": 0.9,
+   "text_max_size_mm": 4.5,
+   "rdp_epsilon_mm": 0.2,
+   "detect_curves": true,
+   "arc_max_residual_mm": 0.25,
+   "arc_min_sweep_deg": 25.0,
+   "column_max_size_mm": 8.0
+  },
+  "correct": {
+   "angle_tolerance_deg": 2.0,
+   "collinear_offset_mm": 0.35,
+   "merge_gap_mm": 0.8,
+   "snap_distance_mm": 1.5,
+   "opening_min_mm": 5.0,
+   "opening_max_mm": 25.0,
+   "thickness_cluster_tolerance": 0.18,
+   "door_arc_radius_tolerance": 0.25,
+   "pair_double_line_walls": true,
+   "double_wall_min_mm": 0.8,
+   "double_wall_max_mm": 4.0
+  },
+  "scale": {
+   "denominator": 100.0,
+   "known_distance_px": null,
+   "known_distance_mm": null,
+   "units": "mm"
+  },
+  "export": {
+   "formats": [
+    "pdf",
+    "svg",
+    "dxf"
+   ],
+   "line_width_mm": 0.18,
+   "wall_outline_width_mm": 0.25,
+   "wall_fill": true,
+   "include_annotations": true,
+   "annotation_backend": "auto",
+   "include_text": true,
+   "preserve_vector_style": true,
+   "review_pdf": true,
+   "dwg": false
+  },
+  "validation": {
+   "tolerance_mm": 0.4,
+   "enabled": true,
+   "comparison_max_width_px": 3600
+  }
+ },
+ "history": [
+  {
+   "stage": "preprocess",
+   "op": "estimate_skew",
+   "angle_deg": -0.7995,
+   "lines_used": 48
+  },
+  {
+   "stage": "preprocess",
+   "op": "rotate",
+   "angle_deg": -0.7995,
+   "center": [
+    1754.0,
+    1240.0
+   ]
+  },
+  {
+   "stage": "preprocess",
+   "op": "median_blur",
+   "ksize": 3
+  },
+  {
+   "stage": "preprocess",
+   "op": "otsu_threshold",
+   "threshold": 120.0
+  },
+  {
+   "stage": "preprocess",
+   "op": "remove_specks",
+   "min_area_px": 7.0,
+   "removed": 124
+  },
+  {
+   "stage": "preprocess",
+   "op": "remove_isolated_specks",
+   "max_area_mm2": 0.25,
+   "radius_mm": 1.5,
+   "removed": 152
+  },
+  {
+   "stage": "preprocess",
+   "op": "summary",
+   "ink_fraction": 0.02491
+  },
+  {
+   "stage": "acquire",
+   "method": "native-image",
+   "dpi": 300.013,
+   "notes": []
+  },
+  {
+   "stage": "extract",
+   "annotation_px": 8153,
+   "wall_kernel_px": 11,
+   "wall_thickness_samples": 7504,
+   "wall_thickness_p50_px": 30.0,
+   "wall_thickness_p95_px": 32.0,
+   "heal_px": 9,
+   "wall_runs": 14,
+   "diagonal_walls": 1,
+   "columns": 1,
+   "solids": 0,
+   "paths": 47,
+   "thin_stroke_px": 5.73,
+   "thin_segments": 15,
+   "arcs": 4,
+   "polylines": 0
+  },
+  {
+   "stage": "correct",
+   "angle_snapped": 10,
+   "bridged_wall_gaps": 0,
+   "bridged_line_gaps": 0,
+   "wall_endpoint_moves": 14,
+   "line_endpoint_moves": 6,
+   "max_wall_move_px": 16.49,
+   "lines_inside_walls_dropped": 0,
+   "degenerate_removed": 0,
+   "thickness_families": [
+    {
+     "family": 0,
+     "thickness": 15.11,
+     "walls": 7,
+     "total_length": 2889.2164306640625
+    },
+    {
+     "family": 1,
+     "thickness": 30.19,
+     "walls": 8,
+     "total_length": 4926.0
+    }
+   ]
+  },
+  {
+   "stage": "openings",
+   "found": 7,
+   "by_kind": {
+    "window": 3,
+    "door": 4
+   },
+   "free_wall_ends": 2
+  },
+  {
+   "stage": "double_line_walls",
+   "pairs": 0
+  },
+  {
+   "stage": "topology",
+   "walls": 15,
+   "graph_nodes": 26,
+   "graph_edges": 28,
+   "connected_components": 2,
+   "dangling_nodes": 2,
+   "junctions": 6,
+   "rooms": 4,
+   "room_areas_m2": [
+    24.0,
+    29.99,
+    32.01,
+    39.99
+   ]
+  },
+  {
+   "stage": "annotation_trace",
+   "backend": "potrace",
+   "polygons": 40,
+   "residual_components": 0,
+   "large_residuals": 0
+  }
+ ],
+ "outputs": {
+  "pdf": "/tmp/claude-0/-home-user-Arch-assessment-tools-/b24de4a5-bdcd-51a7-ae0f-a270bf74204d/scratchpad/demo/synthetic_scan/02_vector/synthetic_scan_clean.pdf",
+  "svg": "/tmp/claude-0/-home-user-Arch-assessment-tools-/b24de4a5-bdcd-51a7-ae0f-a270bf74204d/scratchpad/demo/synthetic_scan/02_vector/synthetic_scan_clean.svg",
+  "dxf": "/tmp/claude-0/-home-user-Arch-assessment-tools-/b24de4a5-bdcd-51a7-ae0f-a270bf74204d/scratchpad/demo/synthetic_scan/02_vector/synthetic_scan_clean.dxf",
+  "review_pdf": "/tmp/claude-0/-home-user-Arch-assessment-tools-/b24de4a5-bdcd-51a7-ae0f-a270bf74204d/scratchpad/demo/synthetic_scan/02_vector/synthetic_scan_review.pdf",
+  "overlay": "/tmp/claude-0/-home-user-Arch-assessment-tools-/b24de4a5-bdcd-51a7-ae0f-a270bf74204d/scratchpad/demo/synthetic_scan/03_validation/overlay.png",
+  "comparison": "/tmp/claude-0/-home-user-Arch-assessment-tools-/b24de4a5-bdcd-51a7-ae0f-a270bf74204d/scratchpad/demo/synthetic_scan/03_validation/comparison.png",
+  "report": "/tmp/claude-0/-home-user-Arch-assessment-tools-/b24de4a5-bdcd-51a7-ae0f-a270bf74204d/scratchpad/demo/synthetic_scan/03_validation/report.md",
+  "model": "/tmp/claude-0/-home-user-Arch-assessment-tools-/b24de4a5-bdcd-51a7-ae0f-a270bf74204d/scratchpad/demo/synthetic_scan/02_vector/model.json"
+ },
+ "elapsed_s": 2.92
+}

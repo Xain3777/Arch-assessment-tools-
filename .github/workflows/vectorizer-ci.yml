@@ -1,0 +1,27 @@
+name: vectorizer tests
+
+on:
+  push:
+    paths: ["vectorizer/**", ".github/workflows/vectorizer-ci.yml"]
+  pull_request:
+    paths: ["vectorizer/**", ".github/workflows/vectorizer-ci.yml"]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: vectorizer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .[dev]
+      - run: python -m pytest -q

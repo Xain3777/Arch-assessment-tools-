@@ -1,0 +1,8 @@
+# Runtime dependencies (tested versions in comments)
+numpy>=1.26                     # 2.5.3
+opencv-python-headless>=4.9     # 5.0.0   Apache-2.0
+PyMuPDF>=1.24                   # 2.1     AGPL-3.0 / commercial
+shapely>=2.0                    # 2.2.0   BSD-3
+networkx>=3.2                   # 3.7     BSD-3
+ezdxf>=1.2                      # 1.4.5   MIT
+scikit-image>=0.22              # 0.26.0  BSD-3

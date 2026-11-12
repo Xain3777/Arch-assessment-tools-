@@ -1,0 +1,16 @@
+# Example: a 1:50 sheet. Walls, openings and snapping radii are twice as large on paper as at 1:100.
+[scale]
+denominator = 50.0
+
+[extract]
+wall_min_thickness_mm = 1.8
+text_max_size_mm = 6.0
+column_max_size_mm = 16.0
+
+[correct]
+merge_gap_mm = 1.2
+snap_distance_mm = 3.0
+opening_min_mm = 10.0
+opening_max_mm = 50.0
+double_wall_min_mm = 1.6
+double_wall_max_mm = 8.0

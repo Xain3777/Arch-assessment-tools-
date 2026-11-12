@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="297mm" height="210mm" viewBox="0 0 841.89 595.276">
+<rect width="841.89" height="595.276" fill="#fff"/>
+<g id="A-ANNO-TEXT" inkscape:groupmode="layer" inkscape:label="A-ANNO-TEXT" stroke="#000" stroke-width="0.51" stroke-linecap="round" stroke-linejoin="round">
+<text x="297.638" y="93.543" font-size="9" font-family="Helvetica, Arial, sans-serif">14000</text>
+<text x="382.677" y="189.921" font-size="9" font-family="Helvetica, Arial, sans-serif">LIVING</text>
+<text x="184.252" y="325.984" font-size="9" font-family="Helvetica, Arial, sans-serif">BED 1</text>
+<text x="172.913" y="229.606" font-size="9" font-family="Helvetica, Arial, sans-serif">KITCHEN</text>
+</g>
+<g id="A-DETL" inkscape:groupmode="layer" inkscape:label="A-DETL" stroke="#000" stroke-width="0.51" stroke-linecap="round" stroke-linejoin="round">
+<line x1="439.37" y1="266.457" x2="464.882" y2="240.945" stroke-width="0.709" stroke="#000000"/>
+</g>
+<g id="A-DOOR" inkscape:groupmode="layer" inkscape:label="A-DOOR" stroke="#000" stroke-width="0.51" stroke-linecap="round" stroke-linejoin="round">
+<line x1="272.126" y1="170.079" x2="297.638" y2="170.079" stroke-width="0.709" stroke="#000000"/>
+<line x1="439.37" y1="240.945" x2="439.37" y2="266.457" stroke-width="0.709" stroke="#000000"/>
+<line x1="269.291" y1="382.677" x2="269.291" y2="411.024" stroke-width="0.709" stroke="#000000"/>
+<line x1="184.252" y1="243.78" x2="184.252" y2="269.291" stroke-width="0.709" stroke="#000000"/>
+<path d="M297.638,195.593 A25.511,25.511 0 0 1 272.123,170.079" fill="none" stroke-width="0.709" stroke="#000000"/>
+<path d="M184.252,243.777 A25.511,25.511 0 0 1 209.766,269.291" fill="none" stroke-width="0.709" stroke="#000000"/>
+<path d="M269.291,411.026 A28.346,28.346 0 0 1 240.942,382.677" fill="none" stroke-width="0.709" stroke="#000000"/>
+<path d="M464.884,240.945 A25.511,25.511 0 0 1 439.37,266.459" fill="none" stroke-width="0.709" stroke="#000000"/>
+</g>
+<g id="A-WALL" inkscape:groupmode="layer" inkscape:label="A-WALL" stroke="#000" stroke-width="0.51" stroke-linecap="round" stroke-linejoin="round">
+<path d="M124.016,124.016 L124.016,131.102 L124.016,379.134 L124.016,386.22 L131.102,386.22 L240.945,386.22 L240.945,379.134 L131.102,379.134 L131.102,270.992 L184.252,270.992 L184.252,267.591 L131.102,267.591 L131.102,131.102 L184.252,131.102 L184.252,124.016 L131.102,124.016 Z" fill="#000" fill-rule="evenodd" stroke="#000" stroke-width="0.709"/>
+<path d="M295.937,131.102 L295.937,170.079 L299.339,170.079 L299.339,131.102 L382.677,131.102 L382.677,124.016 L226.772,124.016 L226.772,131.102 Z" fill="#000" fill-rule="evenodd" stroke="#000" stroke-width="0.709"/>
+<path d="M295.937,270.992 L295.937,379.134 L269.291,379.134 L269.291,386.22 L520.866,386.22 L527.953,386.22 L527.953,379.134 L527.953,340.157 L520.866,340.157 L520.866,379.134 L299.339,379.134 L299.339,270.992 L299.339,267.591 L299.339,242.646 L439.37,242.646 L439.37,239.244 L299.339,239.244 L299.339,195.591 L295.937,195.591 L295.937,239.244 L295.937,242.646 L295.937,267.591 L209.764,267.591 L209.764,270.992 Z" fill="#000" fill-rule="evenodd" stroke="#000" stroke-width="0.709"/>
+<path d="M425.197,131.102 L520.866,131.102 L520.866,239.244 L464.882,239.244 L464.882,242.646 L520.866,242.646 L520.866,297.638 L527.953,297.638 L527.953,131.102 L527.953,124.016 L520.866,124.016 L425.197,124.016 Z" fill="#000" fill-rule="evenodd" stroke="#000" stroke-width="0.709"/>
+<path d="M426.878,355.58 L429.185,353.081 L355.484,285.049 L353.177,287.549 Z" fill="#000" fill-rule="evenodd" stroke="#000" stroke-width="0.709"/>
+</g>
+</svg>
