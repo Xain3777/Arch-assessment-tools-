@@ -302,6 +302,7 @@ def run(input_pdf: str | Path, out_dir: str | Path, cfg: Config | None = None, t
                       "mm_per_unit": drawing.scale.mm_per_unit, "denominator": drawing.scale.denominator,
                       "notes": drawing.scale.notes},
             "summary": drawing.summary(),
+            "page_size_mm": [round(v * 25.4 / 72.0, 4) for v in drawing.page_size_pt],
         }
         flags: dict[str, int] = {}
         for fl in drawing.flags:
@@ -332,6 +333,7 @@ def run(input_pdf: str | Path, out_dir: str | Path, cfg: Config | None = None, t
         report["elapsed_s"] = round(time.perf_counter() - t0, 2)
         (out / "03_validation" / "report.json").write_text(json.dumps(report, indent=1, default=float))
         write_markdown(report, out / "03_validation" / "report.md")
+        (out / "summary.txt").write_text(_summary_text(report), encoding="utf-8")
         outputs["report"] = str(out / "03_validation" / "report.md")
 
         for key in [k for k in drawing.meta if k.startswith("_")]:
@@ -357,6 +359,29 @@ def run(input_pdf: str | Path, out_dir: str | Path, cfg: Config | None = None, t
     finally:
         logging.getLogger("archvectra").removeHandler(handler)
         handler.close()
+
+
+def _summary_text(report: dict[str, Any]) -> str:
+    """Short plain-text result, one fact per line (read by the AutoCAD command)."""
+    s = report.get("summary", {})
+    sc = report.get("scale", {})
+    kinds = s.get("segments_by_kind", {})
+    ops = ", ".join(f"{k} {v}" for k, v in s.get("openings", {}).items()) or "none"
+    flags = ", ".join(f"{k} {v}" for k, v in report.get("flags_by_code", {}).items()) or "none"
+    lines = [
+        f"Source: {report['source']['file']} page {report['source']['page'] + 1} ({report['source']['kind']})",
+        f"Scale: {'calibrated 1:%g' % sc['denominator'] if sc.get('calibrated') and sc.get('denominator') else 'NOT calibrated (sheet mm)'}",
+        f"Walls: {kinds.get('wall', 0)}   lines: {kinds.get('line', 0)}   arcs: {s.get('arcs', 0)}   rooms: {s.get('rooms', 0)}",
+        f"Openings: {ops}",
+        f"Review flags: {flags}",
+    ]
+    ink = report.get("ink_all")
+    if ink:
+        lines.append(f"Match with source: precision {ink['precision']:.3f}  recall {ink['recall']:.3f}")
+    lines.append(f"Time: {report.get('elapsed_s', 0):.1f} s")
+    w, h = report.get("page_size_mm", (0.0, 0.0))
+    lines.append(f"PAGE_MM {w:.4f} {h:.4f}")  # machine-readable: sheet size, used by AutoCAD alignment
+    return "\n".join(lines) + "\n"
 
 
 def _vector_agreement(pdf: Path, cfg: Config, clean_pdf: str, vdir: Path, outputs: dict) -> dict:

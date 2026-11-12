@@ -1,20 +1,30 @@
-;;; archvectra.lsp - AutoCAD helpers for DXF files produced by archvectra
+;;; archvectra.lsp - ArchVectra inside AutoCAD
 ;;;
-;;; Load with APPLOAD (or (load "archvectra.lsp")), then use the commands below.
-;;; The computer-vision work is done in Python; these commands only organise,
-;;; inspect and check the imported geometry.
+;;; Turns a scanned or vector architectural PDF into clean, layered AutoCAD
+;;; geometry without leaving AutoCAD.  The image processing is done by the
+;;; ArchVectra engine (archvectra.exe, Python/OpenCV); this file starts it in
+;;; the background, waits, and brings the result into the current drawing.
 ;;;
-;;; NOTE: written against documented AutoLISP / Visual LISP functions but NOT
-;;; executed in AutoCAD by the author of this file - test before production use.
+;;; Load with APPLOAD (add to the Startup Suite to load automatically).
 ;;;
-;;; Commands
-;;;   ARCHVECTRA-IMPORT     insert an archvectra DXF as an exploded block at 0,0
-;;;   ARCHVECTRA-LAYERS     apply colours / lineweights / plot flags to archvectra layers
+;;; Main commands
+;;;   ARCHVECTRA            pick a PDF, enter page and scale -> vectorised geometry in this drawing
+;;;   ARCHVECTRA-UNDERLAY   select an attached PDF underlay -> geometry placed exactly on top of it
+;;;   ARCHVECTRA-SETUP      tell AutoCAD where archvectra.exe is (once per PC)
+;;; Review / checking
 ;;;   ARCHVECTRA-REVIEW     step through Z-REVIEW flags (zoom to each, show message)
-;;;   ARCHVECTRA-LOWCONF    select entities whose ARCHVECTRA confidence is below a threshold
+;;;   ARCHVECTRA-LOWCONF    select entities whose confidence is below a threshold
 ;;;   ARCHVECTRA-WALLS      list wall centrelines with measured thickness
 ;;;   ARCHVECTRA-CHECKDIM   compare a picked distance with an expected value
-;;;   ARCHVECTRA-CLEAN      run OVERKILL on linework layers (duplicates / overlaps)
+;;;   ARCHVECTRA-REPORT     open the review PDF / report of the last run
+;;; Utilities
+;;;   ARCHVECTRA-IMPORT     insert an existing ArchVectra DXF
+;;;   ARCHVECTRA-LAYERS     apply ArchVectra layer standards
+;;;   ARCHVECTRA-CLEAN      OVERKILL on linework layers
+;;;
+;;; STATUS: written against documented AutoLISP / Visual LISP / WScript
+;;; functions; NOT yet executed in AutoCAD by its author - test on a copy first.
+;;; Requires full AutoCAD or AutoCAD LT 2024+ on Windows (uses ActiveX).
 
 (vl-load-com)
 
@@ -33,7 +43,189 @@
     ("A-ANNO-TEXT"   2 13 T)
     ("Z-REVIEW"      1 13 nil)))
 
-;;; ------------------------------------------------------------ helpers
+(setq *archvectra-last-out* nil)   ; output folder of the last run in this session
+
+;;; ================================================================ engine helpers
+(defun archvectra:exe (/ p)
+  ;; path of archvectra.exe saved by ARCHVECTRA-SETUP (stored in the AutoCAD profile)
+  (setq p (getenv "ArchVectraExe"))
+  (if (and p (/= p "") (findfile p)) p nil))
+
+(defun archvectra:quote (s) (strcat "\"" s "\""))
+
+(defun archvectra:shell-run (cmdline wait / sh rc)
+  ;; run a command line hidden; returns the exit code when wait = T
+  (setq sh (vlax-create-object "WScript.Shell"))
+  (setq rc (vl-catch-all-apply 'vlax-invoke-method
+                               (list sh 'Run cmdline (if wait 0 1) (if wait :vlax-true :vlax-false))))
+  (vlax-release-object sh)
+  (if (vl-catch-all-error-p rc)
+    (progn (princ (strcat "\nCould not start: " (vl-catch-all-error-message rc))) nil)
+    rc))
+
+(defun archvectra:open-file (path)
+  ;; open a file with its Windows default program (PDF viewer, text editor ...)
+  (if (findfile path) (archvectra:shell-run (archvectra:quote path) nil)))
+
+(defun archvectra:outdir (pdf)
+  (strcat (vl-filename-directory pdf) "\\" (vl-filename-base pdf) "_archvectra"))
+
+(defun archvectra:run-engine (pdf page scale / exe out args rc)
+  ;; page is 1-based; scale = N for 1:N, or nil when unknown.  Returns output folder or nil.
+  (setq exe (archvectra:exe))
+  (cond
+    ((not exe)
+     (princ "\nArchVectra engine not found - run ARCHVECTRA-SETUP and select archvectra.exe.")
+     nil)
+    (T
+     (setq out  (archvectra:outdir pdf)
+           args (strcat "process " (archvectra:quote pdf)
+                        " -o " (archvectra:quote out)
+                        " --page " (itoa (1- page))
+                        (if scale (strcat " --scale " (rtos scale 2 6)) "")))
+     (princ (strcat "\nArchVectra: processing " (vl-filename-base pdf) ".pdf - please wait ..."))
+     (princ)
+     (setq rc (archvectra:shell-run (strcat (archvectra:quote exe) " " args) T))
+     (cond
+       ((null rc) nil)
+       ((/= rc 0)
+        (princ (strcat "\nArchVectra failed (exit code " (itoa rc) "). Details: " out "\\run.log"))
+        nil)
+       (T (setq *archvectra-last-out* out) out)))))
+
+(defun archvectra:result-dxf (pdf out)
+  (findfile (strcat out "\\02_vector\\" (vl-filename-base pdf) "_clean.dxf")))
+
+(defun archvectra:show-summary (out / f fh line)
+  (if (setq f (findfile (strcat out "\\summary.txt")))
+    (progn
+      (setq fh (open f "r"))
+      (princ "\n---------------- ArchVectra result ----------------")
+      (while (setq line (read-line fh))
+        (if (not (wcmatch line "PAGE_MM *")) (princ (strcat "\n  " line))))
+      (close fh)
+      (princ "\n----------------------------------------------------"))))
+
+(defun archvectra:page-mm (out / f fh line res)
+  ;; (width height) of the PDF page in mm, read from summary.txt
+  (if (setq f (findfile (strcat out "\\summary.txt")))
+    (progn
+      (setq fh (open f "r"))
+      (while (setq line (read-line fh))
+        (if (wcmatch line "PAGE_MM *")
+          (setq res (read (strcat "(" (substr line 9) ")")))))
+      (close fh)))
+  res)
+
+(defun archvectra:insert (dxf pt scl rot-deg / before oldecho ok)
+  ;; insert DXF exploded; returns T when new entities were created
+  (setq before (entlast) oldecho (getvar "CMDECHO"))
+  (setvar "CMDECHO" 0)
+  (command "_.-INSERT" (strcat "*" dxf) pt (rtos scl 2 10) (rtos rot-deg 2 8))
+  (setvar "CMDECHO" oldecho)
+  (setq ok (not (equal before (entlast))))
+  (if ok
+    (c:ARCHVECTRA-LAYERS)
+    (princ (strcat "\nThe DXF could not be inserted automatically. Open it with OPEN or DXFIN:\n  " dxf)))
+  ok)
+
+(defun archvectra:after-import (out / ans)
+  (archvectra:show-summary out)
+  (princ "\nUse ARCHVECTRA-REVIEW to step through items that need checking.")
+  (initget "Yes No")
+  (setq ans (getkword "\nOpen the review PDF (reconstruction over the source)? [Yes/No] <No>: "))
+  (if (= ans "Yes") (c:ARCHVECTRA-REPORT)))
+
+;;; ================================================================ main commands
+(defun c:ARCHVECTRA-SETUP (/ cur f)
+  (setq cur (getenv "ArchVectraExe"))
+  (if cur (princ (strcat "\nCurrent engine: " cur)))
+  (setq f (getfiled "Locate archvectra.exe" (if cur cur "") "exe" 0))
+  (if f
+    (progn
+      (setenv "ArchVectraExe" f)
+      (princ (strcat "\nArchVectra engine set to: " f))
+      (if (/= 0 (archvectra:shell-run (strcat (archvectra:quote f) " --version") T))
+        (princ "\nWARNING: the selected program did not run correctly.")
+        (princ "\nEngine check OK."))))
+  (princ))
+
+(defun c:ARCHVECTRA (/ pdf page scl out dxf pt)
+  (setq pdf (getfiled "ArchVectra - select a PDF plan" (getvar "DWGPREFIX") "pdf" 0))
+  (if pdf
+    (progn
+      (initget 6)
+      (setq page (getint "\nPage number <1>: "))
+      (if (null page) (setq page 1))
+      (initget 4)
+      (setq scl (getreal "\nDrawing scale 1:N - enter N (0 = unknown) <100>: "))
+      (if (null scl) (setq scl 100.0))
+      (if (= scl 0) (setq scl nil))
+      (if (setq out (archvectra:run-engine pdf page scl))
+        (if (setq dxf (archvectra:result-dxf pdf out))
+          (progn
+            (setq pt (getpoint "\nInsertion point <0,0>: "))
+            (if (null pt) (setq pt '(0.0 0.0 0.0)))
+            (if (archvectra:insert dxf pt 1.0 0.0)
+              (progn
+                (if (null scl)
+                  (princ "\nNOTE: no scale given - geometry is in sheet millimetres, NOT real-world size."))
+                (command "_.ZOOM" "_E")
+                (archvectra:after-import out))))
+          (princ (strcat "\nNo DXF produced - see " out "\\run.log"))))))
+  (princ))
+
+(defun c:ARCHVECTRA-UNDERLAY (/ sel ed def pdf page ins rot out dxf pg bb minp maxp w k)
+  ;; Experimental: align the result with an attached PDF underlay (PDFATTACH).
+  (setq sel (entsel "\nSelect an attached PDF underlay: "))
+  (cond
+    ((null sel) nil)
+    ((/= (cdr (assoc 0 (setq ed (entget (car sel))))) "PDFUNDERLAY")
+     (princ "\nThat is not a PDF underlay."))
+    (T
+     (setq def  (entget (cdr (assoc 340 ed)))
+           pdf  (findfile (cdr (assoc 1 def)))
+           page (if (assoc 2 def) (atoi (cdr (assoc 2 def))) 1)
+           ins  (cdr (assoc 10 ed))
+           rot  (cdr (assoc 50 ed)))
+     (if (or (null page) (< page 1)) (setq page 1))
+     (if (null rot) (setq rot 0.0))
+     (cond
+       ((null pdf) (princ (strcat "\nCannot find the PDF file: " (cdr (assoc 1 def)))))
+       ((setq out (archvectra:run-engine pdf page nil))   ; sheet mm, page origin = lower-left
+        (setq dxf (archvectra:result-dxf pdf out)
+              pg  (archvectra:page-mm out))
+        ;; scale = underlay width in drawing units / sheet width in mm (unrotated bounding box)
+        (vla-getboundingbox (vlax-ename->vla-object (car sel)) 'minp 'maxp)
+        (setq bb (list (vlax-safearray->list minp) (vlax-safearray->list maxp))
+              w  (- (car (cadr bb)) (car (car bb))))
+        (if (and pg (> (car pg) 0) (equal rot 0.0 1e-9))
+          (setq k (/ w (car pg)))
+          (progn
+            (setq k (cdr (assoc 41 ed)))
+            (princ "\nNOTE: rotated underlay - using its scale factor; check the alignment visually.")))
+        (if (and dxf (archvectra:insert dxf ins k (* 180.0 (/ rot pi))))
+          (progn
+            (princ (strcat "\nPlaced over the underlay (scale factor " (rtos k 2 6)
+                           "). Geometry is aligned to the sheet; check one known dimension with ARCHVECTRA-CHECKDIM."))
+            (princ "\nNOTE: a clipped underlay makes the automatic scale wrong - unclip it first.")
+            (archvectra:after-import out)))))))
+  (princ))
+
+(defun c:ARCHVECTRA-REPORT (/ out f)
+  (setq out *archvectra-last-out*)
+  (if (null out)
+    (princ "\nNo ArchVectra run in this session.")
+    (progn
+      (setq f (car (vl-directory-files (strcat out "\\02_vector") "*_review.pdf" 1)))
+      (cond
+        (f (archvectra:open-file (strcat out "\\02_vector\\" f)))
+        ((findfile (strcat out "\\03_validation\\report.md"))
+         (archvectra:open-file (strcat out "\\03_validation\\report.md")))
+        (T (princ (strcat "\nNothing to open in " out))))))
+  (princ))
+
+;;; ================================================================ xdata helpers
 (defun archvectra:xdata (ename / ed xd)
   ;; returns the ARCHVECTRA xdata list ((1000 . "kind=...") (1000 . "confidence") (1040 . 0.9) ...)
   (setq ed (entget ename '("ARCHVECTRA")))
@@ -56,28 +248,29 @@
       (setq val (substr s (+ 2 (strlen prefix))))))
   val)
 
-;;; ------------------------------------------------------------ commands
-(defun c:ARCHVECTRA-IMPORT (/ f)
-  (setq f (getfiled "archvectra DXF" "" "dxf" 0))
+;;; ================================================================ utility commands
+(defun c:ARCHVECTRA-IMPORT (/ f pt)
+  (setq f (getfiled "ArchVectra DXF" "" "dxf" 0))
   (if f
     (progn
-      (command "_.-INSERT" (strcat "*" f) "0,0" "1" "0")
-      (c:ARCHVECTRA-LAYERS)
-      (command "_.ZOOM" "_E")
-      (princ (strcat "\nImported " f
-                     "\nCheck the drawing units: archvectra writes real-world mm only when"
-                     " the scale was calibrated (header variable ARCHVECTRA_UNITS).")))
-    (princ "\nCancelled."))
+      (setq pt (getpoint "\nInsertion point <0,0>: "))
+      (if (null pt) (setq pt '(0.0 0.0 0.0)))
+      (if (archvectra:insert f pt 1.0 0.0)
+        (progn
+          (command "_.ZOOM" "_E")
+          (princ (strcat "\nImported " f
+                         "\nUnits: real-world mm only if a scale was given (header variable ARCHVECTRA_UNITS)."))))))
   (princ))
 
-(defun c:ARCHVECTRA-LAYERS (/ name lay)
+(defun c:ARCHVECTRA-LAYERS (/ name lay layers)
+  (setq layers (vla-get-layers (vla-get-activedocument (vlax-get-acad-object))))
   (foreach spec *archvectra-layers*
     (setq name (car spec))
     (if (tblsearch "LAYER" name)
       (progn
-        (command "_.-LAYER" "_C" (itoa (cadr spec)) name
-                 "_LW" (rtos (/ (caddr spec) 100.0) 2 2) name "")
-        (setq lay (vla-item (vla-get-layers (vla-get-activedocument (vlax-get-acad-object))) name))
+        (setq lay (vla-item layers name))
+        (vla-put-color lay (cadr spec))
+        (vla-put-lineweight lay (caddr spec))
         (vla-put-plottable lay (if (cadddr spec) :vlax-true :vlax-false)))))
   (princ "\nArchVectra layer standards applied (reference layers set to no-plot).")
   (princ))
@@ -89,18 +282,20 @@
     (progn
       (setq i 0 ans "Next")
       (while (and (< i (sslength ss)) (/= ans "eXit"))
-        (setq e (ssname ss i)
-              c (cdr (assoc 10 (entget e)))
-              xd (archvectra:xdata e)
-              msg (archvectra:string-value "message" xd)
-              sev (archvectra:string-value "severity" xd))
-        (command "_.ZOOM" "_C" c (* 40.0 (cdr (assoc 40 (entget e)))))
-        (princ (strcat "\n[" (itoa (1+ i)) "/" (itoa (sslength ss)) "] "
-                       (if sev sev "?") ": " (if msg msg "")))
-        (initget "Next Delete eXit")
-        (setq ans (getkword "\n[Next/Delete flag/eXit] <Next>: "))
-        (if (null ans) (setq ans "Next"))
-        (if (= ans "Delete") (entdel e))
+        (setq e (ssname ss i))
+        (if (entget e)
+          (progn
+            (setq c   (cdr (assoc 10 (entget e)))
+                  xd  (archvectra:xdata e)
+                  msg (archvectra:string-value "message" xd)
+                  sev (archvectra:string-value "severity" xd))
+            (command "_.ZOOM" "_C" c (* 40.0 (cdr (assoc 40 (entget e)))))
+            (princ (strcat "\n[" (itoa (1+ i)) "/" (itoa (sslength ss)) "] "
+                           (if sev sev "?") ": " (if msg msg "")))
+            (initget "Next Delete eXit")
+            (setq ans (getkword "\n[Next/Delete flag/eXit] <Next>: "))
+            (if (null ans) (setq ans "Next"))
+            (if (= ans "Delete") (entdel e))))
         (setq i (1+ i)))))
   (princ))
 
@@ -115,7 +310,7 @@
       (if (and conf (< conf thr)) (ssadd e out))
       (setq i (1+ i))))
   (princ (strcat "\n" (itoa (sslength out)) " entities below " (rtos thr 2 2)
-                 " - they are now the active selection (use PSELECT/Properties)."))
+                 " - they are now the active selection."))
   (sssetfirst nil out)
   (princ))
 
@@ -133,19 +328,19 @@
   (princ))
 
 (defun c:ARCHVECTRA-CHECKDIM (/ p1 p2 d expect tol)
-  (setq p1 (getpoint "\nFirst point: ")
-        p2 (getpoint p1 "\nSecond point: "))
+  (setq p1 (getpoint "\nFirst point: "))
+  (if p1 (setq p2 (getpoint p1 "\nSecond point: ")))
   (if (and p1 p2)
     (progn
       (setq d (distance p1 p2)
             expect (getreal (strcat "\nMeasured " (rtos d 2 2) ". Expected value: ")))
-      (if expect
+      (if (and expect (> expect 0))
         (progn
           (setq tol (abs (- d expect)))
           (princ (strcat "\nDifference " (rtos tol 2 2) " ("
                          (rtos (* 100.0 (/ tol expect)) 2 2) "%)."))
           (if (> (/ tol expect) 0.01)
-            (princ "\nWARNING: more than 1% off - check scale calibration."))))))
+            (princ "\nWARNING: more than 1% off - check the scale (try --known-distance)."))))))
   (princ))
 
 (defun c:ARCHVECTRA-CLEAN (/ ss)
@@ -156,5 +351,5 @@
     (princ "\nNothing to clean."))
   (princ))
 
-(princ "\narchvectra.lsp loaded: ARCHVECTRA-IMPORT, -LAYERS, -REVIEW, -LOWCONF, -WALLS, -CHECKDIM, -CLEAN")
+(princ "\nArchVectra loaded. Commands: ARCHVECTRA, ARCHVECTRA-UNDERLAY, ARCHVECTRA-SETUP, -REVIEW, -REPORT, -LOWCONF, -WALLS, -CHECKDIM, -IMPORT, -LAYERS, -CLEAN")
 (princ)

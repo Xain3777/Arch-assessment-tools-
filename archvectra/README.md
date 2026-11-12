@@ -13,7 +13,7 @@ openings are never filled, and uncertain results are flagged for review.
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Deliverable C — what is done, what is next |
 | [docs/VALIDATION.md](docs/VALIDATION.md) | Validation framework and **measured** results |
 | [demo/](demo/) | Deliverable E — generated outputs |
-| [autocad/](autocad/) | AutoLISP commands for the DXF output |
+| [autocad/INSTALL.md](autocad/INSTALL.md) | **Use ArchVectra inside AutoCAD** (`ARCHVECTRA` command) |
 
 ## What it does (MVP)
 
