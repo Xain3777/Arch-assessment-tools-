@@ -40,7 +40,12 @@
                                else unclassified + flag) · double-line walls
           Stage G semantics.py topology: Shapely noding + polygonize → rooms; NetworkX graph
           (raster) residual ink → trace.py (potrace | contours) → annotation outlines
-          Stage F scale.py     manual 1:N, known distance, consistency check
+          Grid     grid.py + rectify.py + ocr.py   axes (dash-dot lines, column rows, bubbles) fitted by
+                               least squares; columns (+ completion from the grid pattern); OCR of
+                               dimension numbers and labels; scale by consensus; shear removal and
+                               piecewise-linear rubber-sheeting to the written dimensions; snapping of
+                               walls / columns / axes; numbers become text
+          Stage F scale.py     manual 1:N, known distance, dimensions, consistency check
           Stage H export/      clean PDF (OCG layers) · SVG (layers) · DXF (layers, XDATA) ·
                                review PDF · optional DWG (ODA)
           Validation validate.py  re-render clean PDF → ink P/R, chamfer, overlay; ground truth

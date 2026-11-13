@@ -27,6 +27,7 @@ LAYER_DOOR = "A-DOOR"
 LAYER_GLAZING = "A-GLAZ"
 LAYER_OPENING = "A-OPEN"
 LAYER_ROOM = "A-AREA-BDRY"
+LAYER_GRID = "S-GRID"
 LAYER_ANNOTATION = "A-ANNO"
 LAYER_TEXT = "A-ANNO-TEXT"
 LAYER_REVIEW = "Z-REVIEW"
@@ -43,6 +44,7 @@ LAYERS = {
     LAYER_GLAZING: (4, "Window glazing lines"),
     LAYER_OPENING: (6, "Detected opening chords (doors, windows) - reference"),
     LAYER_ROOM: (30, "Room boundary candidates (wall centrelines)"),
+    LAYER_GRID: (1, "Structural grid axes (fitted, rectified)"),
     LAYER_ANNOTATION: (2, "Annotation and untraced ink (outlines)"),
     LAYER_TEXT: (2, "Text objects from vector PDFs"),
     LAYER_REVIEW: (1, "Items flagged for manual review"),

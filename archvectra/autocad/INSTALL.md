@@ -26,7 +26,7 @@ drawing units to millimetres (`UNITS`) so calibrated output comes in at real siz
 
 | Command | What happens |
 |---|---|
-| `ARCHVECTRA` | Pick a PDF → page number → scale N for 1:N (0 = unknown) → wait → pick an insertion point. Clean walls, doors, windows, lines and text outlines appear on `A-*` layers; a summary prints on the command line. |
+| `ARCHVECTRA` | Pick a PDF → page number → scale N for 1:N (0 = read it from the dimension numbers) → "correct with grid axes, columns and dimensions?" (Yes) → wait → pick an insertion point. Clean walls, doors, windows, lines and text outlines appear on `A-*` layers; a summary prints on the command line. |
 | `ARCHVECTRA-UNDERLAY` | *(experimental)* Select a PDF already attached with `PDFATTACH`; the result is placed exactly over it, at the underlay's position and size. Unclip the underlay first. |
 | `ARCHVECTRA-REVIEW` | Zooms to each red `Z-REVIEW` circle and explains it (unclassified opening, short gap, untraced ink …). Delete the flag once checked. |
 | `ARCHVECTRA-REPORT` | Opens the review PDF (reconstruction drawn over the source). |

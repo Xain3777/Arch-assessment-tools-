@@ -24,4 +24,5 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m pip install --upgrade pip
       - run: pip install -e .[dev]
+      - run: pip install --no-deps rapidocr-onnxruntime && pip install onnxruntime pyclipper PyYAML six Pillow
       - run: python -m pytest -q

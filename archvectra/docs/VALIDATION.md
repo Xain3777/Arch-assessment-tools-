@@ -86,7 +86,28 @@ outlines (now chained into continuous lines - see the broken-grid test in `tests
 Run time on a synthetic sheet of the same size dropped from comparable to the above to ~200 s
 (3.5 GB peak RAM) after vectorising the skeleton tracer. No ground truth exists for this sheet.
 
-### 2.5 Not tested (no sample available in this environment)
+### 2.5 Grid / dimension rectification (synthetic, 2026-11-13)
+
+A3 sheet, 1:100, 6 x 4 structural grid (spans 6000/4500/6000/4500/6000 x 5000/6000/5000 mm), a
+500 mm column on every intersection, 250/120 mm walls on axes, dimension chains, bubbles. The scan
+is stretched 1.2 % on its right half, shrunk 0.8 % vertically, sheared 0.2 deg, rotated 0.6 deg, with
+noise, 400 stroke breaks and JPEG compression. Results (`tests/test_grid.py`):
+
+| | before correction | after |
+|---|---|---|
+| axis position error (real mm, uniform scale only) | up to 174 mm | 0 mm (axes placed on the written dimensions) |
+| scale | unknown | 1:100.11 from 8 dimensions (true 1:100; the residual is the scan's average stretch) |
+| grid labels | - | 1-6 read, A-D (B, D read; A, C inferred from the sequence) |
+| columns on intersections | 21 detected | 24 / 24, centred exactly, regular size |
+| rooms | - | 3, areas 52.5 / 115.5 / 264.0 m2 (exact) |
+| overall dimension 27000 | - | agrees with the sum of spans |
+
+Limits: the correction model is separable (shear + piecewise-linear along x and y through the axes);
+it does not model perspective (photographed sheets) or curved warping. Spans without a readable
+number keep their measured size. OCR was tested on clean Hershey-font digits; handwritten or very
+degraded numbers will be read less often (unread numbers are skipped, never guessed).
+
+### 2.6 Not tested (no sample available in this environment)
 
 * A real scanned architectural PDF (only synthetic scans were available).
 * A real hybrid PDF (scan + vector mark-up).

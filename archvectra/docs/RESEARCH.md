@@ -33,6 +33,7 @@ capabilities were established:
 | [Vahe1994/Deep-Vectorization-of-Technical-Drawings](https://github.com/Vahe1994/Deep-Vectorization-of-Technical-Drawings) **[docs]** | Learned primitive (line/curve) vectorisation of technical drawings | MPL-2.0 | 159★, 2026-10 | Medium (file-level copyleft) | GPU, slow; no architectural semantics |
 | [cvg/DeepLSD](https://github.com/cvg/DeepLSD) **[docs]** | Learned line-segment detection and refinement | MIT | 657★, 2026-09 | Medium | GPU recommended; candidate only if classic LSD fails on degraded scans |
 | [navervision/mlsd](https://github.com/navervision/mlsd) **[docs]** | Lightweight learned LSD | Apache-2.0 | 621★, 2023 | Medium | Trained on natural images |
+| [RapidOCR](https://github.com/RapidAI/RapidOCR) **[tested]** (rapidocr-onnxruntime 1.2.3) | PP-OCR text recognition in ONNX, CPU, offline, ~14 MB models | Apache-2.0 | Active | High: used to read dimension numbers and grid labels | Detector mis-crops short labels - the recogniser is called directly on crops found geometrically |
 | [tesseract-ocr/tesseract](https://github.com/tesseract-ocr/tesseract) **[docs]** | OCR | Apache-2.0 | 77 k★ | High (Phase 5 dimension reading) | Rotated, small dimension text needs pre-cropping |
 | [LibreCAD/LibreCAD](https://github.com/LibreCAD/LibreCAD) **[docs]** | 2-D CAD; DXF/DWG read, DXF write | GPL-2.0 | 6.6 k★, active | Free manual-correction tool for users without AutoCAD | Not a library |
 | [tataksh-bhagat/2D-Floor-Plan-to-DXF](https://github.com/tataksh-bhagat/2D-Floor-Plan-to-DXF) **[code]** | 68-line contour → DXF script | GPL-3.0 | 19★, 2023 | None | Toy example |
@@ -87,3 +88,16 @@ capabilities were established:
 | **Algebraic circle fit** | Exact arcs (door swings) | Needs a corner-free run | **Arcs** |
 | Contours / Potrace | Faithful outlines | Not CAD lines | **Annotation preservation** |
 | Graph reconstruction (Shapely noding + NetworkX) | Topology, rooms | Needs clean endpoints | **Rooms / connectivity** |
+
+## 5. Drawing conventions used by the grid stage (sources)
+
+* Grids are lettered one way and numbered the other; bubbles sit at the axis ends outside the
+  building; columns and primary elements are located on the grid
+  ([Studio Matrx - reading structural drawings](https://www.studiomatrx.org/students/structural-systems-for-architects/reading-structural-drawings),
+  [Archinect - gridline labelling standards](https://archinect.com/forum/thread/150433483/gridline-labelling-standards),
+  [Vectorworks - grid bubbles](https://app-help.vectorworks.net/2017/eng/VW2017_Guide/Annotation/Creating_Grid_Bubbles.htm)).
+* Correcting scan distortion from known grid points ("rubber-sheeting"), using the lowest-order
+  transform that fits, is the standard approach in commercial raster-to-CAD tools
+  ([Autodesk Raster Design - correcting distortions using grid points](https://help.autodesk.com/cloudhelp/2025/ENU/AutoCAD-RasterDesign/files/GUID-EDB8B39F-3B90-41DC-ADA5-7DD0C89C752D.htm),
+  [Cadcorp - rubber sheeting](https://help.cadcorp.com/en/8.0/sis/help/Content/Raster_Data_Rubber_Sheeting.html)).
+  ArchVectra automates it: control points come from detected axes and OCR-read dimensions.

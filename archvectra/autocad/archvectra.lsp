@@ -9,6 +9,7 @@
 ;;;
 ;;; Main commands
 ;;;   ARCHVECTRA            pick a PDF, enter page and scale -> vectorised geometry in this drawing
+;;;                         (optionally corrected with the grid axes, columns and written dimensions)
 ;;;   ARCHVECTRA-UNDERLAY   select an attached PDF underlay -> geometry placed exactly on top of it
 ;;;   ARCHVECTRA-SETUP      tell AutoCAD where archvectra.exe is (once per PC)
 ;;; Review / checking
@@ -41,6 +42,7 @@
     ("A-AREA-BDRY"  30 13 nil)
     ("A-ANNO"        2 13 T)
     ("A-ANNO-TEXT"   2 13 T)
+    ("S-GRID"        1 13 T)
     ("Z-REVIEW"      1 13 nil)))
 
 (setq *archvectra-last-out* nil)   ; output folder of the last run in this session
@@ -85,7 +87,7 @@
       (close fh)
       txt)))
 
-(defun archvectra:run-engine (pdf page scale / exe job in out args rc err)
+(defun archvectra:run-engine (pdf page scale extra / exe job in out args rc err)
   ;; page is 1-based; scale = N for 1:N, or nil when unknown.  Returns output folder or nil.
   (setq exe (archvectra:exe))
   (cond
@@ -102,7 +104,8 @@
          (setq args (strcat "process " (archvectra:quote in)
                             " -o " (archvectra:quote out)
                             " --page " (itoa (1- page))
-                            (if scale (strcat " --scale " (rtos scale 2 6)) "")))
+                            (if scale (strcat " --scale " (rtos scale 2 6)) "")
+                            (if extra (strcat " " extra) "")))
          (princ (strcat "\nArchVectra: processing " (vl-filename-base pdf) ".pdf - please wait ..."))
          (princ)
          (setq rc (archvectra:shell-run (strcat (archvectra:quote exe) " " args) T))
@@ -175,7 +178,7 @@
         (princ "\nEngine check OK."))))
   (princ))
 
-(defun c:ARCHVECTRA (/ pdf page scl out dxf pt)
+(defun c:ARCHVECTRA (/ pdf page scl out dxf pt ans extra)
   (setq pdf (getfiled "ArchVectra - select a PDF plan" (getvar "DWGPREFIX") "pdf" 0))
   (if pdf
     (progn
@@ -183,17 +186,19 @@
       (setq page (getint "\nPage number <1>: "))
       (if (null page) (setq page 1))
       (initget 4)
-      (setq scl (getreal "\nDrawing scale 1:N - enter N (0 = unknown) <100>: "))
-      (if (null scl) (setq scl 100.0))
-      (if (= scl 0) (setq scl nil))
-      (if (setq out (archvectra:run-engine pdf page scl))
+      (setq scl (getreal "\nDrawing scale 1:N - enter N (0 = read it from the dimensions) <0>: "))
+      (if (or (null scl) (= scl 0)) (setq scl nil))
+      (initget "Yes No")
+      (setq ans (getkword "\nCorrect the drawing with its grid axes, columns and dimensions? [Yes/No] <Yes>: "))
+      (setq extra (if (= ans "No") "--set grid.enabled=false" nil))
+      (if (setq out (archvectra:run-engine pdf page scl extra))
         (if (setq dxf (archvectra:result-dxf out))
           (progn
             (setq pt (getpoint "\nInsertion point <0,0>: "))
             (if (null pt) (setq pt '(0.0 0.0 0.0)))
             (if (archvectra:insert dxf pt 1.0 0.0)
               (progn
-                (if (null scl)
+                (if (and (null scl) (= ans "No"))
                   (princ "\nNOTE: no scale given - geometry is in sheet millimetres, NOT real-world size."))
                 (command "_.ZOOM" "_E")
                 (archvectra:after-import out))))
@@ -217,7 +222,7 @@
      (if (null rot) (setq rot 0.0))
      (cond
        ((null pdf) (princ (strcat "\nCannot find the PDF file: " (cdr (assoc 1 def)))))
-       ((setq out (archvectra:run-engine pdf page nil))   ; sheet mm, page origin = lower-left
+       ((setq out (archvectra:run-engine pdf page nil "--set grid.enabled=false"))   ; sheet mm, page origin = lower-left
         (setq dxf (archvectra:result-dxf out)
               pg  (archvectra:page-mm out))
         ;; scale = underlay width in drawing units / sheet width in mm (unrotated bounding box)

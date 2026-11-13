@@ -132,15 +132,22 @@ def _fit_runs(mask: np.ndarray, horizontal: bool, min_len: float, kind: str, lay
             ys = np.arange(h)[:, None] + y
             center = float((sub * ys).sum() / max(sub.sum(), 1))
             thick = float(np.median(runs[runs > 0]))
-            if thick < min_thickness or length < 2.0 * thick or h > 1.5 * thick + 3:
-                continue  # h > thickness: staircase of a diagonal stroke, not a horizontal run
+            if thick < min_thickness or length < 2.0 * thick:
+                continue
+            # a diagonal stroke's runs drift sideways; a wall with columns on it only gets taller locally
+            cols_c = (sub * ys).sum(axis=0)[runs > 0] / runs[runs > 0]
+            if np.percentile(cols_c, 95) - np.percentile(cols_c, 5) > 0.8 * thick + 3:
+                continue
             seg = Segment(float(x), center + 0.5, float(x + w), center + 0.5, thick, kind, layer, 1.0, source)
         else:
             runs = sub.sum(axis=1).astype(float)
             xs = np.arange(w)[None, :] + x
             center = float((sub * xs).sum() / max(sub.sum(), 1))
             thick = float(np.median(runs[runs > 0]))
-            if thick < min_thickness or length < 2.0 * thick or w > 1.5 * thick + 3:
+            if thick < min_thickness or length < 2.0 * thick:
+                continue
+            rows_c = (sub * xs).sum(axis=1)[runs > 0] / runs[runs > 0]
+            if np.percentile(rows_c, 95) - np.percentile(rows_c, 5) > 0.8 * thick + 3:
                 continue
             seg = Segment(center + 0.5, float(y), center + 0.5, float(y + h), thick, kind, layer, 1.0, source)
         # confidence: how well a rectangle explains the component

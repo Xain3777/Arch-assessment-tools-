@@ -82,6 +82,20 @@ class CorrectConfig:
 
 
 @dataclass
+class GridConfig:
+    enabled: bool = True  # detect axes / columns and use them to straighten the drawing
+    read_dimensions: bool = True  # OCR the dimension numbers between axes
+    correct_distortion: bool = True  # move axes to the written dimensions (rubber-sheeting)
+    dimension_tolerance: float = 0.05  # spans whose number disagrees more than this are not used for scale
+    max_correction_mm: float = 5.0  # never move an axis further than this (sheet mm)
+    axis_snap_mm: float = 1.0  # walls / lines within this of an axis are placed on it
+    column_snap_mm: float = 2.5  # columns within this of an intersection are centred on it
+    axis_min_length_frac: float = 0.15  # straight lines at least this share of the building contribute to an axis
+    axis_extension_mm: float = 12.0  # how far drawn axes extend beyond the outermost axes
+    replace_text: bool = True  # readable dimension numbers become real (editable) text
+
+
+@dataclass
 class ScaleConfig:
     denominator: float | None = None  # e.g. 100 for 1:100; None = unknown
     known_distance_px: list[float] | None = None  # [x1, y1, x2, y2] in working-image pixels
@@ -116,6 +130,7 @@ class Config:
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
     extract: ExtractConfig = field(default_factory=ExtractConfig)
     correct: CorrectConfig = field(default_factory=CorrectConfig)
+    grid: GridConfig = field(default_factory=GridConfig)
     scale: ScaleConfig = field(default_factory=ScaleConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)

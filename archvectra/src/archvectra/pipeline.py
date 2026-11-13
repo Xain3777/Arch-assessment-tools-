@@ -164,11 +164,108 @@ def _process_raster(pdf: Path, cfg: Config, out: Path, kind: str) -> tuple[Drawi
         drawing.polygons.extend(polys)
         drawing.log("annotation_trace", backend=backend, polygons=len(polys),
                     residual_components=int(keep.sum()), large_residuals=big)
+    if cfg.grid.enabled:
+        drawing.meta["_pre_rectify"] = _rectify(drawing, cfg, pre.binary, ex, anno_mask)
     drawing.meta["_binary"] = pre.binary  # transient, stripped before saving
     drawing.meta["_annotation_mask"] = anno_mask
     drawing.meta["_source_gray"] = rp.gray
     drawing.meta["_working_gray"] = pre.gray
     return drawing, {"raster_method": rp.method, "raster_notes": rp.notes}
+
+
+def _rectify(drawing: Drawing, cfg: Config, binary: np.ndarray, ex, anno_mask: np.ndarray):
+    """Structural-grid stage: axes, columns, dimension numbers -> scale, rectification, snapping.
+
+    Returns a copy of the drawing as it was before rectification (aligned with the
+    scan, used for the review PDF and the source-agreement metrics), or None."""
+    import copy
+
+    from . import grid as gridmod
+    from . import rectify as rf
+
+    g = cfg.grid
+    mm = drawing.mm
+    t50 = ex.stats.get("wall_thickness_p50_px") or mm(cfg.extract.wall_min_thickness_mm)
+    geom = binary & (1 - ex.annotation_mask)
+    cols = gridmod.detect_columns(geom, drawing.dpi, float(t50))
+    grid = gridmod.detect_axes(drawing, cols, g.axis_min_length_frac)
+    info: dict[str, Any] = {"vertical_axes": len(grid.v), "horizontal_axes": len(grid.h), "columns": len(cols)}
+    if len(grid.v) < 2 and len(grid.h) < 2:
+        info["status"] = "no structural grid found - skipped"
+        drawing.log("grid", **info)
+        return None
+    before = copy.deepcopy(drawing)
+    spans, labels = ([], [])
+    if g.read_dimensions:
+        spans, labels = rf.read_grid_text(binary, anno_mask, grid, drawing)
+    nominal = drawing.scale.mm_per_unit
+    sc = rf.choose_scale(spans, drawing.scale.paper_mm_per_unit, nominal, g.dimension_tolerance)
+    info["labels"] = {"vertical": [a.label for a in grid.v], "horizontal": [a.label for a in grid.h]}
+    info["dimension_spans"] = [{"dir": "x" if s_.orientation == "v" else "y", "span": s_.i,
+                                "read": s_.values, "value": s_.value, "real_mm": s_.real_mm,
+                                "measured_px": round(s_.measured_px, 1), "status": s_.status} for s_ in spans]
+    info["scale_from_dimensions"] = {k: (round(v, 6) if isinstance(v, float) else v) for k, v in sc.items()}
+    mm_per_px = sc.get("mm_per_px")
+    if mm_per_px and sc.get("used", 0) >= 1:
+        if nominal and abs(mm_per_px / nominal - 1) > 0.02:
+            drawing.scale.notes.append(
+                f"WARNING: written dimensions imply 1:{sc['denominator']:.1f}, not the given scale - the sheet "
+                "was probably printed/scanned at a different size; dimensions were used")
+        drawing.scale.mm_per_unit = mm_per_px
+        drawing.scale.notes = [n for n in drawing.scale.notes if not n.startswith("no scale information")]
+        drawing.scale.denominator = sc["denominator"]
+        drawing.scale.source = f"dimensions ({sc['used']} spans, unit {sc['unit']})"
+        drawing.scale.notes.append(f"scale from {sc['used']} written dimensions: 1:{sc['denominator']:.2f}")
+    for s_ in spans:
+        if s_.status in ("disagrees", "correction-too-large") and s_.groups:
+            gp = s_.groups[0]
+            drawing.flag(gp.cx, gp.cy, "dimension-mismatch",
+                         f"written {s_.value:g} does not match the drawn spacing - OCR error or drawing not to scale",
+                         "warning")
+    ym = float(np.mean([a.mid for a in grid.h])) if grid.h else drawing.height / 2
+    xm = float(np.mean([a.mid for a in grid.v])) if grid.v else drawing.width / 2
+    ok_dims = bool(mm_per_px) and g.correct_distortion
+    tr, tinfo = rf.build_transform(grid, spans if ok_dims else [], mm_per_px or 1.0, mm(g.max_correction_mm), ym, xm)
+    info.update(tinfo)
+    # text boxes are in the old frame: collect before moving anything
+    used_groups = [gp for s_ in spans if s_.status == "used" for gp in s_.groups if gp.value == s_.value]
+    # overall dimensions: a number equal to the sum of all spans in one direction (cross-check)
+    for orient in ("v", "h"):
+        row = [s_ for s_ in spans if s_.orientation == orient]
+        if row and all(s_.value for s_ in row):
+            total = sum(s_.value for s_ in row)
+            for s_ in row:
+                for gp in s_.groups:
+                    if gp.value and abs(gp.value - total) <= 0.005 * total and gp not in used_groups:
+                        used_groups.append(gp)
+                        info.setdefault("overall_dimension_check", []).append(
+                            {"dir": "x" if orient == "v" else "y", "written": gp.value, "sum_of_spans": total,
+                             "status": "agrees"})
+    used_groups += labels
+    boxes = [(gp.x, gp.y, gp.x + gp.w, gp.y + gp.h) for gp in used_groups]
+    info["columns_completed_from_pattern"] = rf.complete_columns(binary, grid)
+    info["columns_added"] = rf.add_columns(drawing, grid)
+    rf.apply_transform(drawing, tr)
+    if g.replace_text and used_groups:
+        info["outlines_replaced_by_text"] = rf.remove_outlines_in_boxes(drawing, [
+            (float(min(a)), float(min(b)), float(max(a)), float(max(b)))
+            for a, b in ((tr(np.array([x0, x1]), np.array([y0, y1]))) for x0, y0, x1, y1 in boxes)])
+        info["texts_added"] = rf.replace_text(drawing, used_groups, tr)
+    from .correct import snap_angles
+
+    snap_angles([s_ for s_ in drawing.segments], 0.5)
+    X, Y = tr.X, tr.Y
+    info.update(rf.snap_to_grid(drawing, X, Y, mm(g.axis_snap_mm), mm(g.column_snap_mm), grid))
+    info["axes_drawn"] = rf.draw_axes(drawing, grid, X, Y, mm(g.axis_extension_mm))
+    # recompute rooms on the corrected geometry
+    from .semantics import topology
+
+    topology(drawing)
+    info["status"] = "rectified with dimensions" if ok_dims and sc.get("used") else "straightened (no usable dimensions)"
+    drawing.meta["grid"] = {"X": [float(v) for v in X], "Y": [float(v) for v in Y],
+                            "labels_x": info["labels"]["vertical"], "labels_y": info["labels"]["horizontal"]}
+    drawing.log("grid", **info)
+    return before
 
 
 def _merge_vectors(drawing: Drawing, vc, to_frame: bool = False) -> None:
@@ -303,7 +400,8 @@ def run(input_pdf: str | Path, out_dir: str | Path, cfg: Config | None = None, t
                 except RuntimeError as exc:
                     log.warning("DWG not written: %s", exc)
         if cfg.export.review_pdf:
-            outputs["review_pdf"] = str(write_review_pdf(drawing, vec / f"{stem}_review.pdf", cfg.export, pdf,
+            review = drawing.meta.get("_pre_rectify") or drawing
+            outputs["review_pdf"] = str(write_review_pdf(review, vec / f"{stem}_review.pdf", cfg.export, pdf,
                                                          cfg.input.page, drawing.meta.get("_working_gray")))
 
         # ---- validation
@@ -316,17 +414,28 @@ def run(input_pdf: str | Path, out_dir: str | Path, cfg: Config | None = None, t
             "summary": drawing.summary(),
             "page_size_mm": [round(v * 25.4 / 72.0, 4) for v in drawing.page_size_pt],
         }
+        ghist = next((h for h in drawing.history if h.get("stage") == "grid"), None)
+        if ghist:
+            report["grid"] = {k: v for k, v in ghist.items() if k != "stage"}
+            report["grid"]["dimensions_used"] = sum(1 for d_ in ghist.get("dimension_spans", [])
+                                                    if d_["status"] == "used")
         flags: dict[str, int] = {}
         for fl in drawing.flags:
             flags[fl.code] = flags.get(fl.code, 0) + 1
         report["flags_by_code"] = flags
         if cfg.validation.enabled and "pdf" in outputs and "_binary" in drawing.meta:
             tol = mm_to_px(cfg.validation.tolerance_mm, drawing.dpi)
-            recon = render_pdf_to_frame(outputs["pdf"], drawing)
+            pre_r = drawing.meta.get("_pre_rectify")
+            if pre_r is not None:  # compare with the scan before the grid correction moved anything
+                recon = rasterize(pre_r, drawing.meta["_binary"].shape, include_annotation=True,
+                                  line_px=max(1.0, cfg.export.line_width_mm * drawing.dpi / 25.4))
+                report["ink_note"] = "measured on the geometry before grid rectification (aligned with the scan)"
+            else:
+                recon = render_pdf_to_frame(outputs["pdf"], drawing)
             src = drawing.meta["_binary"]
             report["ink_all"] = ink_metrics(src, recon, tol)
             anno = drawing.meta["_annotation_mask"]
-            recon_geom = rasterize(drawing, src.shape, include_annotation=False,
+            recon_geom = rasterize(pre_r if pre_r is not None else drawing, src.shape, include_annotation=False,
                                    line_px=max(1.0, cfg.export.line_width_mm * drawing.dpi / 25.4))
             report["ink_geometry"] = ink_metrics(src & (1 - anno), recon_geom, tol)
             ov = overlay_image(src, recon, tol)
@@ -387,6 +496,10 @@ def _summary_text(report: dict[str, Any]) -> str:
         f"Openings: {ops}",
         f"Review flags: {flags}",
     ]
+    gr = report.get("grid")
+    if gr:
+        lines.append(f"Grid: {gr.get('vertical_axes', 0)} x {gr.get('horizontal_axes', 0)} axes, "
+                     f"{gr.get('columns', 0)} columns, {gr.get('dimensions_used', 0)} dimensions used - {gr.get('status', '')}")
     ink = report.get("ink_all")
     if ink:
         lines.append(f"Match with source: precision {ink['precision']:.3f}  recall {ink['recall']:.3f}")

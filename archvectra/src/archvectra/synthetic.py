@@ -279,3 +279,149 @@ def write_vector_pdf(path: str | Path, spec: PlanSpec | None = None) -> dict:
     doc.close()
     Path(path).with_suffix(".truth.json").write_text(json.dumps(gt, indent=1))
     return gt
+
+
+# ============================================================================ grid plan
+# A structural-grid plan: axes 1..6 / A..D with bubbles, a column on every grid
+# intersection, walls on the axes, dimension chains with real numbers, and a scan
+# with *non-uniform* distortion (stretch, shrink, shear) - the case the grid /
+# dimension rectification has to correct.
+GRID_X_MM = [6000, 4500, 6000, 4500, 6000]  # spans between vertical axes 1..6 (real mm)
+GRID_Y_MM = [5000, 6000, 5000]  # spans between horizontal axes A..D
+A3_LANDSCAPE_MM = (420.0, 297.0)
+
+
+def _put_text(img, text, center, height_px, angle=0):
+    """Draw text centred on ``center``; angle 0 or 90 (reads bottom-to-top)."""
+    scale = height_px / 22.0
+    th = max(1, int(round(height_px / 8)))
+    (w, h), base = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, th)
+    tile = np.full((h + base + 2 * th + 4, w + 2 * th + 4), 255, np.uint8)
+    cv2.putText(tile, text, (th + 2, h + th + 2), cv2.FONT_HERSHEY_SIMPLEX, scale, 0, th, cv2.LINE_AA)
+    if angle == 90:
+        tile = cv2.rotate(tile, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    y0 = int(round(center[1] - tile.shape[0] / 2))
+    x0 = int(round(center[0] - tile.shape[1] / 2))
+    region = img[y0:y0 + tile.shape[0], x0:x0 + tile.shape[1]]
+    np.minimum(region, tile[:region.shape[0], :region.shape[1]], out=region)
+
+
+def _dash_dot(img, p, q, thick, dash=60, gap=14, dot=8):
+    p, q = np.array(p, float), np.array(q, float)
+    L = np.linalg.norm(q - p)
+    u = (q - p) / L
+    t = 0.0
+    while t < L:
+        a, b = p + u * t, p + u * min(L, t + dash)
+        cv2.line(img, tuple(np.round(a).astype(int)), tuple(np.round(b).astype(int)), 0, thick, cv2.LINE_AA)
+        t += dash + gap
+        if t < L:
+            c, d = p + u * t, p + u * min(L, t + dot)
+            cv2.line(img, tuple(np.round(c).astype(int)), tuple(np.round(d).astype(int)), 0, thick, cv2.LINE_AA)
+        t += dot + gap
+
+
+def render_grid_plan(dpi: int = 300, scale: float = 100.0) -> tuple[np.ndarray, dict]:
+    pxmm = dpi / 25.4
+    W, H = int(round(A3_LANDSCAPE_MM[0] * pxmm)), int(round(A3_LANDSCAPE_MM[1] * pxmm))
+    img = np.full((H, W), 255, np.uint8)
+    k = pxmm / scale  # px per real mm
+    ox, oy = 95 * pxmm, 75 * pxmm  # sheet position of axis 1 / A
+    xs = [ox + k * v for v in np.concatenate([[0], np.cumsum(GRID_X_MM)])]
+    ys = [oy + k * v for v in np.concatenate([[0], np.cumsum(GRID_Y_MM)])]
+    thin = max(1, int(round(0.25 * pxmm)))
+    ext = 14 * pxmm  # axes extend past the building
+    r_b = 4.5 * pxmm  # bubble radius
+    for i, x in enumerate(xs):  # vertical axes 1..6, bubbles on top
+        _dash_dot(img, (x, ys[0] - ext), (x, ys[-1] + ext * 0.6), thin)
+        c = (x, ys[0] - ext - r_b)
+        cv2.circle(img, tuple(np.round(c).astype(int)), int(r_b), 0, thin, cv2.LINE_AA)
+        _put_text(img, str(i + 1), c, 4.0 * pxmm)
+    for j, y in enumerate(ys):  # horizontal axes A..D, bubbles on the left
+        _dash_dot(img, (xs[0] - ext, y), (xs[-1] + ext * 0.6, y), thin)
+        c = (xs[0] - ext - r_b, y)
+        cv2.circle(img, tuple(np.round(c).astype(int)), int(r_b), 0, thin, cv2.LINE_AA)
+        _put_text(img, "ABCD"[j], c, 4.0 * pxmm)
+    # walls (250 perimeter, 120 interior on axis B and axis 3), drawn solid
+    def wall(p, q, t_mm):
+        t = k * t_mm / 2
+        x0, x1 = sorted((p[0], q[0]))
+        y0, y1 = sorted((p[1], q[1]))
+        cv2.rectangle(img, (int(round(x0 - t)), int(round(y0 - t))), (int(round(x1 + t)), int(round(y1 + t))), 0, -1)
+    wall((xs[0], ys[0]), (xs[-1], ys[0]), 250)
+    wall((xs[0], ys[-1]), (xs[-1], ys[-1]), 250)
+    wall((xs[0], ys[0]), (xs[0], ys[-1]), 250)
+    wall((xs[-1], ys[0]), (xs[-1], ys[-1]), 250)
+    wall((xs[0], ys[1]), (xs[2], ys[1]), 120)
+    wall((xs[2], ys[0]), (xs[2], ys[-1]), 120)
+    # columns 500 x 500 on every intersection
+    cs = k * 500 / 2
+    for x in xs:
+        for y in ys:
+            cv2.rectangle(img, (int(round(x - cs)), int(round(y - cs))), (int(round(x + cs)), int(round(y + cs))), 0, -1)
+    # dimension chains: top (between bubbles and building) and left, plus overall dimension
+    yd = ys[0] - 7 * pxmm
+    cv2.line(img, (int(xs[0]), int(yd)), (int(xs[-1]), int(yd)), 0, thin, cv2.LINE_AA)
+    for x in xs:
+        cv2.line(img, (int(x - 1.2 * pxmm), int(yd + 1.2 * pxmm)), (int(x + 1.2 * pxmm), int(yd - 1.2 * pxmm)), 0, thin)
+    for i, v in enumerate(GRID_X_MM):
+        _put_text(img, str(v), ((xs[i] + xs[i + 1]) / 2, yd - 2.6 * pxmm), 2.8 * pxmm)
+    xd = xs[0] - 7 * pxmm
+    cv2.line(img, (int(xd), int(ys[0])), (int(xd), int(ys[-1])), 0, thin, cv2.LINE_AA)
+    for y in ys:
+        cv2.line(img, (int(xd - 1.2 * pxmm), int(y + 1.2 * pxmm)), (int(xd + 1.2 * pxmm), int(y - 1.2 * pxmm)), 0, thin)
+    for j, v in enumerate(GRID_Y_MM):
+        _put_text(img, str(v), (xd - 2.6 * pxmm, (ys[j] + ys[j + 1]) / 2), 2.8 * pxmm, angle=90)
+    yb = ys[-1] + 12 * pxmm  # overall dimension below
+    cv2.line(img, (int(xs[0]), int(yb)), (int(xs[-1]), int(yb)), 0, thin, cv2.LINE_AA)
+    for x in (xs[0], xs[-1]):
+        cv2.line(img, (int(x - 1.2 * pxmm), int(yb + 1.2 * pxmm)), (int(x + 1.2 * pxmm), int(yb - 1.2 * pxmm)), 0, thin)
+    _put_text(img, str(sum(GRID_X_MM)), ((xs[0] + xs[-1]) / 2, yb + 3 * pxmm), 2.8 * pxmm)
+    truth = {"dpi": dpi, "scale_denominator": scale, "mm_per_px_real": scale * 25.4 / dpi,
+             "axes_x_px": xs, "axes_y_px": ys, "grid_x_mm": GRID_X_MM, "grid_y_mm": GRID_Y_MM,
+             "columns_px": [[x, y] for x in xs for y in ys], "image_size": [W, H]}
+    return img, truth
+
+
+def distort(img: np.ndarray, stretch_x: float = 0.012, knee_frac: float = 0.5, scale_y: float = -0.008,
+            shear_deg: float = 0.2) -> tuple[np.ndarray, callable]:
+    """Non-uniform scan distortion: right part stretched by ``stretch_x``, y scaled, small shear.
+
+    Returns the distorted image and ``fwd(x, y)`` mapping ideal -> distorted pixels."""
+    h, w = img.shape
+    knee = w * knee_frac
+    sh = math.tan(math.radians(shear_deg))
+
+    def fwd(x, y):
+        x = np.asarray(x, float)
+        y = np.asarray(y, float)
+        xd = x + stretch_x * np.maximum(0.0, x - knee) + sh * (y - h / 2)
+        yd = h / 2 + (y - h / 2) * (1 + scale_y)
+        return xd, yd
+
+    # inverse map for remap: solve per pixel (piecewise linear -> closed form)
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    yi = h / 2 + (ys - h / 2) / (1 + scale_y)
+    xo = xs - sh * (yi - h / 2)
+    xi = np.where(xo > knee, knee + (xo - knee) / (1 + stretch_x), xo)
+    out = cv2.remap(img, xi.astype(np.float32), yi.astype(np.float32), cv2.INTER_LINEAR,
+                    borderMode=cv2.BORDER_CONSTANT, borderValue=255)
+    return out, fwd
+
+
+def write_grid_scan_pdf(path: str | Path, dpi: int = 300, rotate_deg: float = 0.6, seed: int = 5,
+                        stretch_x: float = 0.012, scale_y: float = -0.008, shear_deg: float = 0.2) -> dict:
+    path = Path(path)
+    img, truth = render_grid_plan(dpi)
+    img, fwd = distort(img, stretch_x=stretch_x, scale_y=scale_y, shear_deg=shear_deg)
+    img = degrade(img, rotate_deg=rotate_deg, seed=seed, breaks=400)
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    doc = pymupdf.open()
+    page = doc.new_page(width=A3_LANDSCAPE_MM[0] / 25.4 * 72, height=A3_LANDSCAPE_MM[1] / 25.4 * 72)
+    page.insert_image(page.rect, stream=buf.tobytes())
+    doc.save(path)
+    doc.close()
+    truth["distortion"] = {"stretch_x": stretch_x, "scale_y": scale_y, "shear_deg": shear_deg,
+                           "rotate_deg": rotate_deg, "seed": seed}
+    path.with_suffix(".truth.json").write_text(json.dumps(truth, indent=1))
+    return truth

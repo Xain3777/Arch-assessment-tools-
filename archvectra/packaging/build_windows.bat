@@ -2,12 +2,14 @@
 rem Builds dist\ArchVectra\ : engine\archvectra.exe + the AutoCAD LISP + install notes.
 rem Run from the archvectra folder inside an activated virtual environment:
 rem   pip install -e . pyinstaller
+rem   pip install --no-deps rapidocr-onnxruntime && pip install onnxruntime pyclipper PyYAML six Pillow
 rem   packaging\build_windows.bat
 setlocal
 pyinstaller --noconfirm --clean --onedir --name archvectra ^
   --distpath build\pyi-dist --workpath build\pyi-work --specpath build ^
   --collect-submodules skimage --collect-data skimage ^
-  --exclude-module onnxruntime --exclude-module pymupdf4llm --exclude-module pymupdf.layout ^
+  --collect-all rapidocr_onnxruntime --collect-binaries onnxruntime ^
+  --exclude-module pymupdf4llm --exclude-module pymupdf.layout ^
   --exclude-module matplotlib --exclude-module tkinter ^
   --paths src packaging\entry.py || exit /b 1
 if exist dist\ArchVectra rmdir /s /q dist\ArchVectra

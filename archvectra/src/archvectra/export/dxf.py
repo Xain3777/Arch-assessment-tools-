@@ -25,6 +25,7 @@ from ..model import (
     LAYER_TEXT,
     LAYER_WALL,
     LAYER_WALL_CENTER,
+    LAYER_GRID,
     LAYERS,
     Drawing,
 )
@@ -64,6 +65,8 @@ def write_dxf(drawing: Drawing, path: str | Path, cfg: ExportConfig) -> Path:
         layer.dxf.lineweight = LINEWEIGHTS.get(name, 18)
         if name in (LAYER_ROOM, LAYER_OPENING):
             layer.off()
+        if name == LAYER_GRID and "CENTER" in doc.linetypes:
+            layer.dxf.linetype = "CENTER"
     msp = doc.modelspace()
     C = fr.cad  # noqa: N806
     keep = cfg.preserve_vector_style

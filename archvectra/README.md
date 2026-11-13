@@ -27,9 +27,16 @@ openings are never filled, and uncertain results are flagged for review.
    (pieces on one straight line, gaps up to 4 mm, or up to 8 mm where another line crosses; ink must
    cover at least 45 % of the length - door-sized gaps are never bridged), closes L/T corners, groups
    wall thicknesses into families.
-6. Finds openings from free wall ends and classifies them (door: swing arc or leaf; window: glazing
+6. **Uses the structural grid (محاور) like a draughtsman would**: finds the axes (long dash-dot lines,
+   rows of columns, bubbles at the ends), fits each axis to all its evidence, reads the grid labels and
+   the **dimension numbers** between axes with an OCR model (RapidOCR, offline), derives the real scale
+   from them, then **corrects the scan / drawing**: removes shear and rotation, moves every axis to the
+   position its written dimension requires (non-uniform scan stretch is undone), places walls on/flush
+   with the axes and columns exactly on the intersections, and turns the numbers into editable text.
+   Spans whose number disagrees with the drawing are flagged, not forced.
+7. Finds openings from free wall ends and classifies them (door: swing arc or leaf; window: glazing
    lines; otherwise *unclassified* + review flag). Reconstructs rooms and areas.
-7. Exports clean PDF (page-identical size, toggleable layers), SVG, DXF (real-world mm when calibrated,
+8. Exports clean PDF (page-identical size, toggleable layers), SVG, DXF (real-world mm when calibrated,
    layers, XDATA with confidence), review PDF, overlay/comparison images, JSON + Markdown report.
 
 ## Installation (Windows)
